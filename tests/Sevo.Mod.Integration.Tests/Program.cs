@@ -268,6 +268,8 @@ if(File.Exists(loaderArticle)) tests.Add(("verified upstream loader is cached wi
     var path=RuntimeDownloads.EnsureLoaderAsync(client,cache,loaderArticle).GetAwaiter().GetResult();
     Check(File.Exists(path),"verified loader was not cached");Check(RuntimeDownloads.EnsureLoaderAsync(client,cache).GetAwaiter().GetResult()==path,"offline cache was not reused");
 }));
+LauncherUpdateTests.Register(tests, root);
+GameCleanupTests.Add(tests, root);
 foreach(var test in tests) { try {test.Run();Console.WriteLine("PASS "+test.Name);passed++;}catch(Exception ex){Console.Error.WriteLine("FAIL "+test.Name+": "+ex.Message);} }
 Console.WriteLine($"{passed}/{tests.Count} hosting tests passed"); return passed==tests.Count?0:1;
 

@@ -11,11 +11,9 @@ public sealed partial class MainForm
     private async Task NewProfileAsync()
     {
         var name = Prompts.Text(this, "New profile", "Profile name", "My mods"); if (string.IsNullOrWhiteSpace(name)) return;
-        using var folder = new FolderBrowserDialog { Description = "Choose this profile's Starship EVO game folder. Use a separate game copy for a separate profile.", UseDescriptionForTitle = true };
-        var typical = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Steam", "steamapps", "common", "Starship EVO");
-        if (Directory.Exists(typical)) folder.InitialDirectory = typical;
-        if (folder.ShowDialog(this) != DialogResult.OK) return;
-        var profile = await Task.Run(() => service.CreateProfile(name, folder.SelectedPath));
+        var game = ChooseGameFolder("Choose this profile's Starship EVO game folder. Use a separate game copy for a separate profile.");
+        if (game == null) return;
+        var profile = await Task.Run(() => service.CreateProfile(name, game));
         if (!CanUseControls) return;
         RefreshViews(); profiles.SelectedItem = profiles.Items.Cast<ProfileChoice>().First(x => x.Id == profile.Id);
         Write("Created profile " + profile.Name + ". Save files remain those of the selected game installation.");
@@ -117,11 +115,19 @@ public sealed partial class MainForm
     private Task OpenGameAsync() { Process.Start(new ProcessStartInfo(Profile().GameDirectory) { UseShellExecute = true }); return Task.CompletedTask; }
     private async Task PlayAsync()
     {
-        var profile = Profile(); var errors = service.ValidateProfile(profile.Id);
-        if (errors.Count > 0) throw new InvalidOperationException(string.Join(Environment.NewLine, errors));
-        new RuntimeProvisioner(dataRoot).ValidatePrepared(profile.GameDirectory, State(profile)); RuntimeProvisioner.AssertNotRunning(profile.GameDirectory);
-        var ticket = GameLaunch.Create(profile.GameDirectory, State(profile));
-        using var process = Process.Start(ticket.StartInfo) ?? throw new InvalidOperationException("Game process did not start.");
+        var profile = Profile();
+        LaunchTicket ticket;
+        Process launched;
+        using (RuntimeProvisioner.LockGame(profile.GameDirectory))
+        {
+            var errors = service.ValidateProfile(profile.Id);
+            if (errors.Count > 0) throw new InvalidOperationException(string.Join(Environment.NewLine, errors));
+            new RuntimeProvisioner(dataRoot).ValidatePrepared(profile.GameDirectory, State(profile));
+            RuntimeProvisioner.AssertNotRunning(profile.GameDirectory);
+            ticket = GameLaunch.Create(profile.GameDirectory, State(profile));
+            launched = Process.Start(ticket.StartInfo) ?? throw new InvalidOperationException("Game process did not start.");
+        }
+        using var process = launched;
         Write($"Game process {process.Id} started; waiting for this launch's runtime report…");
         var id = process.Id; string? report = null; bool ready = false, failed = false;
         for (int i = 0; i < 60 && !process.HasExited && CanUseControls; i++)

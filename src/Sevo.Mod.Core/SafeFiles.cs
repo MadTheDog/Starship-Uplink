@@ -27,10 +27,15 @@ internal static class SafeFiles
         var current=Path.GetFullPath(path);
         while(!string.IsNullOrEmpty(current))
         {
-            if((File.Exists(current)||Directory.Exists(current)) && (File.GetAttributes(current)&FileAttributes.ReparsePoint)!=0)
+            if(Attributes(current) is FileAttributes attributes && (attributes&FileAttributes.ReparsePoint)!=0)
                 throw new PlatformException("Symbolic links and reparse points are not allowed: " + current);
             current=Path.GetDirectoryName(current)!;
         }
+    }
+    internal static FileAttributes? Attributes(string path)
+    {
+        try { return File.GetAttributes(path); }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException) { return null; }
     }
     internal static string Under(string root,string relative)
     {
@@ -61,10 +66,10 @@ internal static class SafeFiles
         if(e.ValueKind==JsonValueKind.Object) { var keys=new HashSet<string>(StringComparer.OrdinalIgnoreCase); foreach(var p in e.EnumerateObject()) { if(!keys.Add(p.Name)) throw new PlatformException("Duplicate JSON property: " + p.Name); CheckJson(p.Value); } }
         else if(e.ValueKind==JsonValueKind.Array) foreach(var v in e.EnumerateArray()) CheckJson(v);
     }
-    internal static void Write<T>(string file,T value)
+    internal static void Write<T>(string file,T value,bool overwrite=true)
     {
         Ancestors(file); Create(Path.GetDirectoryName(file)!); var temp=file+".tmp-"+Guid.NewGuid().ToString("N");
-        try { using(var stream=new FileStream(temp,FileMode.CreateNew,FileAccess.Write,FileShare.None)) { JsonSerializer.Serialize(stream,value,Json); stream.Flush(true); } File.Move(temp,file,true); }
+        try { using(var stream=new FileStream(temp,FileMode.CreateNew,FileAccess.Write,FileShare.None)) { JsonSerializer.Serialize(stream,value,Json); stream.Flush(true); } File.Move(temp,file,overwrite); }
         finally { if(File.Exists(temp)) File.Delete(temp); }
     }
     internal static string Hash(string file) { Ancestors(file); using var s=File.OpenRead(file); return Convert.ToHexString(SHA256.HashData(s)).ToLowerInvariant(); }

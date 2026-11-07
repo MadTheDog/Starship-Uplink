@@ -17,7 +17,7 @@ public sealed class RuntimeProvisioner
     private readonly string root;
     private readonly IGameProcessInspector processes;
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
-    private const string OwnerName = ".sevo-runtime-owned.json", PendingName = ".sevo-runtime-pending.json";
+    internal const string OwnerName = ".sevo-runtime-owned.json", PendingName = ".sevo-runtime-pending.json";
     private const string ConfigPath = "BepInEx/config/BepInEx.cfg";
     private const int OwnedSchema = 1, ExternalSchema = 2;
     public RuntimeProvisioner(string workspaceRoot, IGameProcessInspector? processes = null) { root = Path.GetFullPath(workspaceRoot); SafePath.Check(root); this.processes = processes ?? new GameProcessInspector(); }
@@ -25,7 +25,8 @@ public sealed class RuntimeProvisioner
     public RuntimePreparation Prepare(string gameDirectory, string stateDirectory, string loaderZip, string frameworkDirectory)
     {
         var game = ValidateGame(gameDirectory); var state = ValidateState(stateDirectory);
-        using var guard = Acquire(state); CheckNotRunning(game); Recover(game);
+        using var gameGuard = LockGame(game);
+        using var guard = Acquire(state); PlatformService.AssertNoGameCleanup(game); CheckNotRunning(game); Recover(game);
         var desired = ReadPayload(loaderZip, frameworkDirectory);
         var old = ReadManifest(game, OwnerName);
         bool reuseLoader = old != null
@@ -86,10 +87,11 @@ public sealed class RuntimeProvisioner
     public void Remove(string gameDirectory, string stateDirectory)
     {
         var game = ValidateGame(gameDirectory); var state = ValidateState(stateDirectory);
-        using var guard = Acquire(state); CheckNotRunning(game); Recover(game);
+        using var gameGuard = LockGame(game);
+        using var guard = Acquire(state); PlatformService.AssertNoGameCleanup(game); CheckNotRunning(game); Recover(game);
         var manifest = ReadManifest(game, OwnerName) ?? throw new InvalidOperationException("No manager-owned runtime is installed.");
         Verify(game, manifest, true, checkExternal: false);
-        foreach (var file in manifest.Files.Where(x => !x.Preserve && !manifest.IsExternal(x.Path))) File.Delete(SafePath.Child(game, file.Path));
+        foreach (var file in RemovableFiles(manifest)) File.Delete(SafePath.Child(game, file.Path));
         File.Delete(SafePath.Child(game, OwnerName));
         var marker = SafePath.Child(state, "sevo-runtime-profile.json"); if (File.Exists(marker)) File.Delete(marker);
     }
@@ -97,7 +99,8 @@ public sealed class RuntimeProvisioner
     public void ValidatePrepared(string gameDirectory, string stateDirectory)
     {
         var game = ValidateGame(gameDirectory); var state = ValidateState(stateDirectory);
-        using var guard = Acquire(state); CheckNotRunning(game); Recover(game);
+        using var gameGuard = LockGame(game);
+        using var guard = Acquire(state); PlatformService.AssertNoGameCleanup(game); CheckNotRunning(game); Recover(game);
         var manifest = ReadManifest(game, OwnerName) ?? throw new InvalidOperationException("Prepare the runtime before launching this profile.");
         Verify(game, manifest, false); WriteProfileMarker(game, state);
     }
@@ -135,7 +138,48 @@ public sealed class RuntimeProvisioner
         var state = SafePath.Child(root, Path.GetRelativePath(root, Path.GetFullPath(path)));
         Directory.CreateDirectory(state); return state;
     }
-    private static string ValidateGame(string path)
+    internal IDisposable LockCleanupRuntime(string profileId) =>
+        Acquire(ValidateState(Path.Combine(root, "runtime", profileId)));
+
+    /// <summary>Serializes synchronous runtime changes and launch handoff for one installation.</summary>
+    public static IDisposable LockGame(string gameDirectory)
+    {
+        var game = Path.GetFullPath(gameDirectory);
+        SafePath.Check(game);
+        var path = Path.TrimEndingDirectorySeparator(game).ToUpperInvariant();
+        var mutex = new Mutex(false, "Sevo.Uplink.Game." + Hash(Encoding.UTF8.GetBytes(path)));
+        try
+        {
+            try
+            {
+                if (!mutex.WaitOne(0)) throw new InvalidOperationException("Another runtime or cleanup operation is in progress for this game.");
+            }
+            catch (AbandonedMutexException) { } // The interrupted operation's journal remains on disk.
+            return new GameLock(mutex);
+        }
+        catch
+        {
+            mutex.Dispose();
+            throw;
+        }
+    }
+
+    private sealed class GameLock(Mutex mutex) : IDisposable
+    {
+        public void Dispose()
+        {
+            mutex.ReleaseMutex();
+            mutex.Dispose();
+        }
+    }
+
+    internal static IEnumerable<OwnedFile> ReadCleanupFiles(string game, string marker) =>
+        RemovableFiles(ReadManifestFile(game, marker) ?? throw new InvalidOperationException("The runtime ownership marker changed during cleanup."));
+
+    private static IEnumerable<OwnedFile> RemovableFiles(RuntimeManifest manifest) =>
+        manifest.Files.Where(file => !file.Preserve && !manifest.IsExternal(file.Path));
+
+    internal static string ValidateGame(string path)
     {
         var game = Path.GetFullPath(path); SafePath.Check(game);
         if (!File.Exists(SafePath.Child(game, "Starship EVO.exe")) || !File.Exists(SafePath.Child(game, "Starship EVO_Data/Managed/Assembly-CSharp.dll"))) throw new InvalidOperationException("Choose a Starship EVO installation containing its executable and managed assembly.");
@@ -155,9 +199,12 @@ public sealed class RuntimeProvisioner
     {
         if (processes.IsRunning(game)) throw new InvalidOperationException("Close this Starship EVO installation before changing its runtime.");
     }
-    private static RuntimeManifest? ReadManifest(string game, string name)
+    private static RuntimeManifest? ReadManifest(string game, string name) =>
+        ReadManifestFile(game, SafePath.Child(game, name));
+
+    private static RuntimeManifest? ReadManifestFile(string game, string path)
     {
-        var path = SafePath.Child(game, name); if (!File.Exists(path)) return null; RuntimeManifest value;
+        if (!File.Exists(path)) return null; RuntimeManifest value;
         if (new FileInfo(path).Length > 1024 * 1024) throw new InvalidOperationException("Runtime record exceeds its size limit; preserving all files.");
         try
         {
@@ -216,7 +263,7 @@ public sealed class RuntimeProvisioner
         {
             if (!Equivalent(complete, pending) || pending.Files.Any(x => !File.Exists(SafePath.Child(game, x.Path)))) throw new InvalidOperationException("Ambiguous runtime recovery state; preserving all files for inspection.");
         }
-        else foreach (var file in pending.Files.Where(x => !x.Preserve && !pending.IsExternal(x.Path))) File.Delete(SafePath.Child(game, file.Path));
+        else foreach (var file in RemovableFiles(pending)) File.Delete(SafePath.Child(game, file.Path));
         File.Delete(SafePath.Child(game, PendingName));
     }
     private static bool Equivalent(RuntimeManifest a, RuntimeManifest b) =>

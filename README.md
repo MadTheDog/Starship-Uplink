@@ -14,7 +14,13 @@ Uplink provisions BepInEx and ships with [Starship Keel](https://github.com/MadT
 
 Profiles select plugins. Save isolation requires a separate Unity data path. Keep backups when testing experimental content. If Uplink reports a missing or different loader file, use a clean game copy or repair the external loader before preparing it. Uplink supports BepInEx 5.4.23.5 for Windows x64 Mono with `HideManagerGameObject = true` under `[Chainloader]` in `BepInEx.cfg`. **Remove runtime** removes the files Uplink installed and preserves verified external files.
 
-When upgrading Uplink, close it and copy the contents of the new ZIP's launcher folder into your existing Uplink folder. Keep the `data` workspace at its existing path so Uplink can find your profiles. Use Uplink 0.1.1 or later to manage a runtime that reuses external files.
+## Update or clean up
+
+**Update Uplink** checks the stable GitHub release. If a newer version is available, you can install it in place and keep your profiles, or clean a selected game folder. Uplink verifies the downloaded ZIP, backs up the old launcher files, and restarts with the same workspace. The updater uses the release ZIP layout and a writable launcher directory.
+
+**Clean game** is also available directly, including when the old workspace was lost. Close the selected game and review the confirmation before continuing. Uplink releases the profile's game claim and archives its deployment and owned runtime files under `BepInEx/SevoCleanupBackups`, outside the plugin scan path. The package library, saves, configuration, and manually installed files are preserved. For a game still claimed by an accessible workspace, open that workspace to clean it.
+
+To install this version over Uplink 0.1.1 or earlier, close Uplink and copy the contents of the new ZIP's launcher folder into the existing Uplink folder. Keep the `data` workspace at its existing path.
 
 The launcher was developed against Windows x64 Mono, **Steam build 26451593 / 26w45a**, Unity **6000.6.6f1**. Keel checks the game contracts it uses at startup. The build ID records the test target.
 
@@ -28,6 +34,8 @@ dotnet publish src/Sevo.Mod.Cli/Sevo.Mod.Cli.csproj -c Release -o artifacts/upli
 ```
 
 For **Prepare game**, create `artifacts/uplink/framework` and put `Sevo.Framework.Runtime.dll` and `Sevo.Framework.Sdk.dll` from the matching [Keel release](https://github.com/MadTheDog/Starship-Keel/releases) there. `KEEL-RELEASE.txt` in the Uplink download identifies its bundled version and source commit.
+
+To build the update-compatible ZIP from a clean Git checkout, use PowerShell 7 and run `./tools/Build-UplinkRelease.ps1 -KeelDirectory <extracted-keel-release>`. The script writes the ZIP and its SHA-256 under `artifacts/releases`.
 
 The launcher and command line share the same package manager. Run `cli/Sevo.Mod.Cli.exe --help` for commands and use `--root` to select the same workspace as the launcher. The launcher stores its workspace in the `data` folder by default and accepts `--workspace` to open an existing workspace at its current path. See the [package format](docs/PACKAGES.md).
 

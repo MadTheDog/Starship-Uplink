@@ -43,9 +43,13 @@ public sealed partial class PlatformService
         }
         return data;
     }
-    Profiles Profiles()
+    Profiles Profiles() => ReadProfiles(profilesPath);
+    static Profiles ReadProfiles(string path)
     {
-        var data=File.Exists(profilesPath)?SafeFiles.Read<Profiles>(profilesPath):new Profiles();
+        SafeFiles.Ancestors(path);
+        var attributes=SafeFiles.Attributes(path);
+        if(attributes is FileAttributes present && (present&FileAttributes.Directory)!=0)throw new PlatformException("Profile catalog path is a directory.");
+        var data=attributes.HasValue?SafeFiles.Read<Profiles>(path):new Profiles();
         if(data.SchemaVersion!=1||data.Items==null)throw new PlatformException("Unsupported or malformed profile catalog.");
         var ids=new HashSet<string>(); var games=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach(var p in data.Items)
@@ -90,6 +94,7 @@ public sealed partial class PlatformService
     void Stopped(ProfileRecord p) { SafeFiles.Ancestors(p.GameDirectory); if(processes.IsRunning(p.GameDirectory))throw new PlatformException("Close the selected Starship EVO game before changing its mods."); }
     void Owner(ProfileRecord p)
     {
+        AssertNoGameCleanup(p.GameDirectory);
         SafeFiles.Ancestors(Marker(p)); if(!File.Exists(Marker(p)))throw new PlatformException("The game directory has no profile ownership marker.");
         var owner=SafeFiles.Read<Ownership>(Marker(p));
         if(owner.SchemaVersion!=1||owner.ProfileId!=p.Id||!string.Equals(owner.WorkspaceRoot,root,StringComparison.OrdinalIgnoreCase))throw new PlatformException("The game directory belongs to another profile/workspace.");
@@ -103,7 +108,10 @@ public sealed partial class PlatformService
         SafeFiles.Ancestors(executable); SafeFiles.Ancestors(assembly); SafeFiles.Ancestors(plugins);
         if(!File.Exists(executable)||!File.Exists(assembly))throw new PlatformException("Select a valid Starship EVO game directory containing Starship EVO.exe and Starship EVO_Data/Managed/Assembly-CSharp.dll. The launcher prepares BepInEx automatically.");
         var data=Profiles(); var p=new ProfileRecord { Id=Guid.NewGuid().ToString("N"),Name=name,GameDirectory=game,Generation=Guid.NewGuid().ToString("N") }; Stopped(p);
-        if(data.Items.Any(x=>string.Equals(x.GameDirectory,game,StringComparison.OrdinalIgnoreCase))||File.Exists(Marker(p))||Directory.Exists(Managed(p)))throw new PlatformException("This game directory is already owned or has an unmanaged SevoManaged directory.");
+        AssertNoGameCleanup(game);
+        SafeFiles.Ancestors(Marker(p)); SafeFiles.Ancestors(Managed(p));
+        if(data.Items.Any(x=>SamePath(x.GameDirectory,game))||File.Exists(Marker(p)))throw new PlatformException("This game directory already has a profile claim. Open its owning Uplink workspace, or choose Clean game to inspect a claim left by a lost profile.");
+        if(Directory.Exists(Managed(p))||File.Exists(Managed(p))||Directory.Exists(Marker(p)))throw new PlatformException("This game directory has SevoManaged content or an invalid profile marker. Preserve and review those files before claiming the game.");
         var createdDirectories=new[]{"BepInEx","BepInEx/plugins"}.Where(relative=>!Directory.Exists(SafeFiles.Under(game,relative))).ToList();
         SafeFiles.Write(creationPath,new ProfileCreationIntent { Profile=p,CreatedDirectories=createdDirectories }); checkpoint?.Invoke("create-intent-written");
         foreach(var relative in createdDirectories)SafeFiles.Create(SafeFiles.Under(game,relative));
@@ -226,5 +234,5 @@ public sealed partial class PlatformService
         }
         File.Delete(creationPath);
     }
-    sealed class Ownership { [System.Text.Json.Serialization.JsonRequired] public int SchemaVersion { get; set; }=1; [System.Text.Json.Serialization.JsonRequired] public string ProfileId { get; set; }=""; [System.Text.Json.Serialization.JsonRequired] public string WorkspaceRoot { get; set; }=""; }
+    internal sealed class Ownership { [System.Text.Json.Serialization.JsonRequired] public int SchemaVersion { get; set; }=1; [System.Text.Json.Serialization.JsonRequired] public string ProfileId { get; set; }=""; [System.Text.Json.Serialization.JsonRequired] public string WorkspaceRoot { get; set; }=""; }
 }

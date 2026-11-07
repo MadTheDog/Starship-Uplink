@@ -27,7 +27,7 @@ public sealed partial class MainForm : Form
         var available = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1280, 900);
         Size = new Size(Math.Min(1180, available.Width - 30), Math.Min(840, available.Height - 45));
         StartPosition = FormStartPosition.CenterScreen; Font = new Font("Segoe UI", 10); BackColor = Color.FromArgb(245, 247, 250);
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("StarshipUplink/0.1.1");
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("StarshipUplink/" + UplinkVersion);
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 1, RowCount = 6 };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -35,12 +35,13 @@ public sealed partial class MainForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 125));
         var header = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = true, AutoSize = true };
         header.Controls.Add(new Label { Text = "Starship Uplink", Font = new Font(Font.FontFamily, 22, FontStyle.Bold), AutoSize = true }); header.Controls.Add(status);
+        header.Controls.Add(Button("Update Uplink", UpdateLauncherAsync));
         var profileBar = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = true, AutoSize = true };
         profileBar.Controls.Add(new Label { Text = "Profile", AutoSize = true, Margin = new Padding(0, 8, 12, 0) }); profileBar.Controls.Add(profiles);
-        profileBar.Controls.Add(Button("New profile", NewProfileAsync)); profileBar.Controls.Add(Button("Prepare game", PrepareAsync)); profileBar.Controls.Add(Button("Play", PlayAsync)); profileBar.Controls.Add(Button("Validate", ValidateAsync));
+        profileBar.Controls.Add(Button("New profile", NewProfileAsync)); profileBar.Controls.Add(Button("Prepare game", PrepareAsync)); profileBar.Controls.Add(Button("Play", PlayAsync)); profileBar.Controls.Add(Button("Validate", ValidateAsync)); profileBar.Controls.Add(Button("Clean game", CleanGameAsync));
         toolbar.Controls.Add(Button("Import ZIP", ImportAsync)); toolbar.Controls.Add(Button("Add from GitHub", AddGitHubAsync));
         toolbar.Controls.Add(Button("Install selected", InstallAsync)); toolbar.Controls.Add(Button("Enable / disable", ToggleAsync));
-        toolbar.Controls.Add(Button("Check update", UpdateAsync)); toolbar.Controls.Add(Button("Pin / unpin", PinAsync));
+        toolbar.Controls.Add(Button("Check mod update", UpdateAsync)); toolbar.Controls.Add(Button("Pin / unpin", PinAsync));
         toolbar.Controls.Add(Button("Roll back", RollbackAsync)); toolbar.Controls.Add(Button("Remove mod", RemoveAsync)); toolbar.Controls.Add(Button("Remove runtime", RemoveRuntimeAsync)); toolbar.Controls.Add(Button("Open game folder", OpenGameAsync)); toolbar.Controls.Add(Button("Refresh", () => { RefreshViews(); return Task.CompletedTask; }));
         var split = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
         split.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); split.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
@@ -53,11 +54,15 @@ public sealed partial class MainForm : Form
             if (busy) { refreshPending = true; return; }
             await RunAsync(() => Task.CompletedTask);
         };
-        Shown += async (_, _) => await RunAsync(() =>
+        Shown += async (_, _) =>
         {
-            Write("Import a mod ZIP or add its GitHub repository. Profiles select plugins; they do not isolate game saves.");
-            return Task.CompletedTask;
-        }, true);
+            await RunAsync(() =>
+            {
+                Write("Import a mod ZIP or add its GitHub repository. Profiles select plugins; they do not isolate game saves.");
+                return Task.CompletedTask;
+            }, true);
+            if (CanUseControls) await NoticeLauncherUpdateAsync();
+        };
         FormClosed += (_, _) => { closed = true; http.Dispose(); };
     }
     private static DataGridView Grid(string name) => new() { Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, SelectionMode = DataGridViewSelectionMode.FullRowSelect, MultiSelect = false, RowHeadersVisible = false, AccessibleName = name, BackgroundColor = Color.White, BorderStyle = BorderStyle.None };
@@ -132,7 +137,11 @@ public sealed partial class MainForm : Form
                 installed.Columns["Name"].HeaderText = "Mod name";
                 installed.Columns["Name"].FillWeight = 200;
             }
-            else installed.DataSource = null;
+            else
+            {
+                installed.DataSource = null;
+                target.Text = "Create a profile to choose a game installation.";
+            }
         }
         finally { refreshing = false; }
     }
