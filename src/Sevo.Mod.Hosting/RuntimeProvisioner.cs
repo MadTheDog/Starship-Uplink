@@ -6,7 +6,10 @@ using Sevo.Mod.Core;
 
 namespace Sevo.Mod.Hosting;
 
-public sealed record RuntimePreparation(string StateDirectory, int FilesInstalled);
+public sealed record RuntimePreparation(string StateDirectory, int FilesInstalled)
+{
+    public bool ReusedLoader { get; init; }
+}
 
 /// <summary>Owns known bootstrap files separately from ordinary mod payloads.</summary>
 public sealed class RuntimeProvisioner
@@ -16,6 +19,7 @@ public sealed class RuntimeProvisioner
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
     private const string OwnerName = ".sevo-runtime-owned.json", PendingName = ".sevo-runtime-pending.json";
     private const string ConfigPath = "BepInEx/config/BepInEx.cfg";
+    private const int OwnedSchema = 1, ExternalSchema = 2;
     public RuntimeProvisioner(string workspaceRoot, IGameProcessInspector? processes = null) { root = Path.GetFullPath(workspaceRoot); SafePath.Check(root); this.processes = processes ?? new GameProcessInspector(); }
 
     public RuntimePreparation Prepare(string gameDirectory, string stateDirectory, string loaderZip, string frameworkDirectory)
@@ -23,18 +27,40 @@ public sealed class RuntimeProvisioner
         var game = ValidateGame(gameDirectory); var state = ValidateState(stateDirectory);
         using var guard = Acquire(state); CheckNotRunning(game); Recover(game);
         var desired = ReadPayload(loaderZip, frameworkDirectory);
+        var old = ReadManifest(game, OwnerName);
+        bool reuseLoader = old != null
+            ? old.ExternalFiles?.Any(LoaderDependency) == true
+            : desired.Keys.Any(path => (LoaderDependency(path) || path == ".doorstop_version") && File.Exists(SafePath.Child(game, path)));
+        if (reuseLoader)
+        {
+            // Documentation and version markers are irrelevant to a working external loader.
+            foreach (var path in desired.Keys.Where(path => LoaderFile(path) && !LoaderDependency(path)).ToArray()) desired.Remove(path);
+        }
+        var external = old != null ? old.ExternalFiles : desired.Keys.Where(path =>
+            reuseLoader && LoaderDependency(path) || FrameworkFile(path) && File.Exists(SafePath.Child(game, path))).ToList();
         var files = desired.Select(x => new OwnedFile { Path = x.Key, Sha256 = Hash(x.Value), Preserve = x.Key == ConfigPath }).ToList();
         var manifest = new RuntimeManifest { Files = files };
-        var old = ReadManifest(game, OwnerName);
+        if (external is { Count: > 0 })
+        {
+            manifest.SchemaVersion = ExternalSchema;
+            manifest.ExternalFiles = external;
+        }
+        var result = new RuntimePreparation(state, files.Count(file => !manifest.IsExternal(file.Path))) { ReusedLoader = reuseLoader };
         if (old != null)
         {
             Verify(game, old, false);
             if (!Equivalent(old, manifest)) throw new InvalidOperationException("A different managed runtime is installed. Remove the owned runtime before replacing it; configuration and mods will be preserved.");
-            WriteProfileMarker(game, state); return new(state, files.Count);
+            WriteProfileMarker(game, state); return result;
         }
         foreach (var file in files)
         {
             var destination = SafePath.Child(game, file.Path);
+            if (manifest.IsExternal(file.Path))
+            {
+                if (!File.Exists(destination) || HashFile(destination) != file.Sha256)
+                    throw new InvalidOperationException($"Existing runtime cannot be reused because this file is missing or differs from the verified distribution: {file.Path}");
+                continue;
+            }
             if (File.Exists(destination) && !(file.Preserve && ValidConfig(destination))) throw new InvalidOperationException($"Existing unmanaged runtime file would be overwritten: {file.Path}");
             if (Directory.Exists(destination)) throw new InvalidOperationException($"Runtime file path is a directory: {file.Path}");
         }
@@ -45,13 +71,14 @@ public sealed class RuntimeProvisioner
             foreach (var file in files)
             {
                 var target = SafePath.Child(game, file.Path);
-                if (file.Preserve && File.Exists(target)) continue;
+                if (manifest.IsExternal(file.Path) || file.Preserve && File.Exists(target)) continue;
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 using var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None);
                 output.Write(desired[file.Path]); output.Flush(true);
             }
+            if (manifest.ExternalFiles != null) Verify(game, manifest, false);
             AtomicJson(SafePath.Child(game, OwnerName), manifest);
-            File.Delete(SafePath.Child(game, PendingName)); return new(state, files.Count);
+            File.Delete(SafePath.Child(game, PendingName)); return result;
         }
         catch { Recover(game); throw; }
     }
@@ -61,8 +88,8 @@ public sealed class RuntimeProvisioner
         var game = ValidateGame(gameDirectory); var state = ValidateState(stateDirectory);
         using var guard = Acquire(state); CheckNotRunning(game); Recover(game);
         var manifest = ReadManifest(game, OwnerName) ?? throw new InvalidOperationException("No manager-owned runtime is installed.");
-        Verify(game, manifest, true);
-        foreach (var file in manifest.Files.Where(x => !x.Preserve)) File.Delete(SafePath.Child(game, file.Path));
+        Verify(game, manifest, true, checkExternal: false);
+        foreach (var file in manifest.Files.Where(x => !x.Preserve && !manifest.IsExternal(x.Path))) File.Delete(SafePath.Child(game, file.Path));
         File.Delete(SafePath.Child(game, OwnerName));
         var marker = SafePath.Child(state, "sevo-runtime-profile.json"); if (File.Exists(marker)) File.Delete(marker);
     }
@@ -140,11 +167,16 @@ public sealed class RuntimeProvisioner
             if (properties.GroupBy(x => x.Name, StringComparer.OrdinalIgnoreCase).Any(x => x.Count() != 1)) throw new JsonException("Duplicate runtime record property.");
             var schema = properties.FirstOrDefault(x => x.Name.Equals("schemaVersion", StringComparison.OrdinalIgnoreCase));
             var entries = properties.FirstOrDefault(x => x.Name.Equals("files", StringComparison.OrdinalIgnoreCase));
-            if (schema.Value.ValueKind != JsonValueKind.Number || !schema.Value.TryGetInt32(out var version) || version != 1 || entries.Value.ValueKind != JsonValueKind.Array) throw new JsonException("Runtime record requires explicit schemaVersion1 and files array.");
+            if (schema.Value.ValueKind != JsonValueKind.Number || !schema.Value.TryGetInt32(out var version) ||
+                version is not (OwnedSchema or ExternalSchema) || entries.Value.ValueKind != JsonValueKind.Array)
+                throw new JsonException("Runtime record requires a supported schema version and files array.");
             value = JsonSerializer.Deserialize<RuntimeManifest>(text, Json) ?? throw new JsonException("Empty runtime record");
         }
         catch (JsonException ex) { throw new InvalidOperationException("Runtime ownership/recovery record is invalid; no files were changed.", ex); }
-        if (value.SchemaVersion != 1 || value.Files == null || value.Files.Count is < 1 or > 256) throw new InvalidOperationException("Unsupported runtime record.");
+        if (value.Files == null || value.Files.Count is < 1 or > 256 ||
+            value.SchemaVersion == OwnedSchema && value.ExternalFiles != null ||
+            value.SchemaVersion == ExternalSchema && value.ExternalFiles is not { Count: > 0 and <= 256 })
+            throw new InvalidOperationException("Unsupported runtime record or missing external file inventory.");
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in value.Files)
         {
@@ -153,30 +185,44 @@ public sealed class RuntimeProvisioner
             if (!Allowed(file.Path) || !seen.Add(file.Path) || file.Sha256.Length != 64 || file.Sha256.Any(x => !Uri.IsHexDigit(x)) || file.Preserve != (file.Path == ConfigPath)) throw new InvalidOperationException("Invalid runtime ownership entry.");
             SafePath.Child(game, file.Path);
         }
+        if (value.ExternalFiles != null)
+        {
+            var external = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var externalPath in value.ExternalFiles)
+                if (string.IsNullOrWhiteSpace(externalPath) || !seen.Contains(externalPath) || !external.Add(externalPath) ||
+                    !(LoaderDependency(externalPath) || FrameworkFile(externalPath)))
+                    throw new InvalidOperationException("Invalid external runtime file inventory.");
+            if (external.Any(LoaderDependency) && value.Files.Any(file => LoaderFile(file.Path) && !external.Contains(file.Path)))
+                throw new InvalidOperationException("External loader files cannot also be owned by Uplink.");
+        }
         return value;
     }
-    private static void Verify(string game, RuntimeManifest manifest, bool allowMissing)
+    private static void Verify(string game, RuntimeManifest manifest, bool allowMissing, bool checkExternal = true)
     {
         foreach (var file in manifest.Files)
         {
+            if (!checkExternal && manifest.IsExternal(file.Path)) continue;
             var path = SafePath.Child(game, file.Path);
             if (!File.Exists(path)) { if (!allowMissing) throw new InvalidOperationException("Managed runtime file is missing: " + file.Path); continue; }
             if (file.Preserve) { if (!ValidConfig(path)) throw new InvalidOperationException("Set [Chainloader] HideManagerGameObject = true in BepInEx.cfg before preparing the runtime."); }
-            else if (Hash(File.ReadAllBytes(path)) != file.Sha256) throw new InvalidOperationException($"Runtime file was changed outside the manager; preserving it: {file.Path}");
+            else if (HashFile(path) != file.Sha256) throw new InvalidOperationException($"Runtime file was changed outside the manager; preserving it: {file.Path}");
         }
     }
     private static void Recover(string game)
     {
         var pending = ReadManifest(game, PendingName); if (pending == null) return;
-        var complete = ReadManifest(game, OwnerName); Verify(game, pending, true);
+        var complete = ReadManifest(game, OwnerName); Verify(game, pending, true, checkExternal: complete != null);
         if (complete != null)
         {
             if (!Equivalent(complete, pending) || pending.Files.Any(x => !File.Exists(SafePath.Child(game, x.Path)))) throw new InvalidOperationException("Ambiguous runtime recovery state; preserving all files for inspection.");
         }
-        else foreach (var file in pending.Files.Where(x => !x.Preserve)) File.Delete(SafePath.Child(game, file.Path));
+        else foreach (var file in pending.Files.Where(x => !x.Preserve && !pending.IsExternal(x.Path))) File.Delete(SafePath.Child(game, file.Path));
         File.Delete(SafePath.Child(game, PendingName));
     }
-    private static bool Equivalent(RuntimeManifest a, RuntimeManifest b) => a.Files.Count == b.Files.Count && a.Files.All(x => b.Files.Any(y => x.Path == y.Path && x.Sha256 == y.Sha256 && x.Preserve == y.Preserve));
+    private static bool Equivalent(RuntimeManifest a, RuntimeManifest b) =>
+        a.SchemaVersion == b.SchemaVersion && a.Files.Count == b.Files.Count &&
+        a.Files.All(x => b.Files.Any(y => x.Path == y.Path && x.Sha256 == y.Sha256 && x.Preserve == y.Preserve) &&
+            a.IsExternal(x.Path) == b.IsExternal(x.Path));
     private static bool ValidConfig(string path)
     {
         bool chainloader = false;
@@ -187,8 +233,17 @@ public sealed class RuntimeProvisioner
         }
         return false;
     }
-    private static bool Allowed(string path) => path is "winhttp.dll" or "doorstop_config.ini" or ".doorstop_version" or "changelog.txt" or ConfigPath || path.StartsWith("BepInEx/core/", StringComparison.Ordinal) && !path[13..].Contains('/') || path is "BepInEx/plugins/SevoPlatform/Sevo.Framework.Runtime.dll" or "BepInEx/plugins/SevoPlatform/Sevo.Framework.Sdk.dll";
+    private static bool LoaderCoreFile(string path) => path.StartsWith("BepInEx/core/", StringComparison.Ordinal) && !path[13..].Contains('/');
+    private static bool LoaderDependency(string path) => path is "winhttp.dll" or "doorstop_config.ini" || LoaderCoreFile(path) && path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
+    private static bool LoaderFile(string path) => path is "winhttp.dll" or "doorstop_config.ini" or ".doorstop_version" or "changelog.txt" || LoaderCoreFile(path);
+    private static bool FrameworkFile(string path) => path is "BepInEx/plugins/SevoPlatform/Sevo.Framework.Runtime.dll" or "BepInEx/plugins/SevoPlatform/Sevo.Framework.Sdk.dll";
+    private static bool Allowed(string path) => path == ConfigPath || LoaderFile(path) || FrameworkFile(path);
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+    private static string HashFile(string path)
+    {
+        using var file = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(file)).ToLowerInvariant();
+    }
     private static void AtomicJson<T>(string path, T value)
     {
         SafePath.Check(path); var temp = path + ".tmp-" + Guid.NewGuid().ToString("N");
@@ -206,6 +261,13 @@ public sealed class RuntimeProvisioner
         }
         AtomicJson(marker, new { schemaVersion = 1, profileId = new DirectoryInfo(state).Name, gameDirectory = game });
     }
-    public sealed class RuntimeManifest { public int SchemaVersion { get; set; } = 1; public List<OwnedFile> Files { get; set; } = []; }
+    public sealed class RuntimeManifest
+    {
+        public int SchemaVersion { get; set; } = OwnedSchema;
+        public List<OwnedFile> Files { get; set; } = [];
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public List<string>? ExternalFiles { get; set; }
+        internal bool IsExternal(string path) => ExternalFiles?.Contains(path, StringComparer.OrdinalIgnoreCase) == true;
+    }
     public sealed class OwnedFile { public string Path { get; set; } = ""; public string Sha256 { get; set; } = ""; public bool Preserve { get; set; } }
 }

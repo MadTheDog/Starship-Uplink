@@ -7,12 +7,14 @@ Uplink provisions BepInEx and ships with [Starship Keel](https://github.com/MadT
 ## Install and use
 
 1. Install the Windows x64 **.NET 8 Desktop Runtime**.
-2. Download `Starship-Uplink-0.1.0-win-x64.zip` from [Releases](https://github.com/MadTheDog/Starship-Uplink/releases) and extract the whole archive to a writable folder.
-3. Run **Starship Uplink.exe**. Create a profile and choose a clean Starship EVO game directory. Each profile owns one game copy.
-4. Select **Prepare game**. Uplink downloads and checks the official BepInEx archive, then installs the bundled Keel runtime.
+2. Download the latest Windows ZIP from [Releases](https://github.com/MadTheDog/Starship-Uplink/releases) and extract the whole archive to a writable folder.
+3. Run **Starship Uplink.exe**. Create a profile and select the folder containing `Starship EVO.exe`. Each profile owns one game copy.
+4. Select **Prepare game**. Uplink verifies the official BepInEx archive and reuses an existing installation when its loader DLLs and Doorstop configuration match. It installs the bundled Keel runtime or reuses matching manually installed Keel DLLs.
 5. Import a mod ZIP or choose **Add from GitHub**. Select the package version, install it, and use **Validate** before **Play**.
 
-Profiles select plugins. Save isolation requires a separate Unity data path. Keep backups when testing experimental content. Uplink preserves files it does not own and refuses to overwrite an unmanaged loader. Use **Remove runtime** to remove the bootstrap and framework files installed by Uplink.
+Profiles select plugins. Save isolation requires a separate Unity data path. Keep backups when testing experimental content. If Uplink reports a missing or different loader file, use a clean game copy or repair the external loader before preparing it. Uplink supports BepInEx 5.4.23.5 for Windows x64 Mono with `HideManagerGameObject = true` under `[Chainloader]` in `BepInEx.cfg`. **Remove runtime** removes the files Uplink installed and preserves verified external files.
+
+When upgrading Uplink, close it and copy the contents of the new ZIP's launcher folder into your existing Uplink folder. Keep the `data` workspace at its existing path so Uplink can find your profiles. Use Uplink 0.1.1 or later to manage a runtime that reuses external files.
 
 The launcher was developed against Windows x64 Mono, **Steam build 26451593 / 26w45a**, Unity **6000.6.6f1**. Keel checks the game contracts it uses at startup. The build ID records the test target.
 

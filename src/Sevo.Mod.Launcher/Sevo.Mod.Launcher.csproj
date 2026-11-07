@@ -4,6 +4,7 @@
     <UseWindowsForms>true</UseWindowsForms><ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyName>Starship Uplink</AssemblyName>
     <Product>Starship Uplink</Product>
+    <Version>0.1.1</Version>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Sevo.Mod.Core/Sevo.Mod.Core.csproj" />

@@ -98,7 +98,9 @@ public sealed partial class MainForm
         var framework = Path.Combine(appRoot, "framework");
         if (!Directory.Exists(framework)) throw new InvalidOperationException("Starship Keel is missing. Extract the complete Starship Uplink release, including its framework folder.");
         var result = await Task.Run(() => new RuntimeProvisioner(dataRoot).Prepare(profile.GameDirectory, State(profile), loader, framework));
-        Write($"Runtime prepared ({result.FilesInstalled} owned files). Startup readiness will be checked after launching.");
+        Write(result.ReusedLoader
+            ? "Verified existing BepInEx. Starship Keel is prepared for the next launch."
+            : $"Runtime prepared ({result.FilesInstalled} files). Startup readiness will be checked after launching.");
     }
     private async Task ValidateAsync()
     {
@@ -108,7 +110,7 @@ public sealed partial class MainForm
     private async Task RemoveRuntimeAsync()
     {
         var profile = Profile();
-        if (MessageBox.Show(this, "Remove this manager's loader and framework files? Mod packages, configuration and saves will be preserved.", "Remove managed runtime", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
+        if (MessageBox.Show(this, "Remove the runtime files installed by Uplink? Existing external runtime files, mod packages, configuration and saves are preserved.", "Remove managed runtime", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
         await Task.Run(() => new RuntimeProvisioner(dataRoot).Remove(profile.GameDirectory, State(profile)));
         Write("Removed the owned runtime. Configuration, packages and saves were preserved.");
     }

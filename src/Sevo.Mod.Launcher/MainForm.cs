@@ -27,7 +27,7 @@ public sealed partial class MainForm : Form
         var available = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1280, 900);
         Size = new Size(Math.Min(1180, available.Width - 30), Math.Min(840, available.Height - 45));
         StartPosition = FormStartPosition.CenterScreen; Font = new Font("Segoe UI", 10); BackColor = Color.FromArgb(245, 247, 250);
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("StarshipUplink/0.1.0");
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("StarshipUplink/0.1.1");
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 1, RowCount = 6 };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));

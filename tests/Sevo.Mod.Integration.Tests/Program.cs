@@ -40,6 +40,76 @@ tests.Add(("unmanaged existing bootstrap is never overwritten",()=>{
     Throws(()=>new RuntimeProvisioner(root).Prepare(f.Game,f.State,f.Zip,f.Framework));
     Check(File.ReadAllText(Path.Combine(f.Game,"winhttp.dll"))=="someone else's runtime","unmanaged file overwritten");
 }));
+foreach (bool manualKeel in new[] { false, true })
+    tests.Add(($"verified existing BepInEx stays external with manual Keel={manualKeel}", () =>
+    {
+        var f = Fixture("reuse-" + manualKeel);
+        ZipFile.ExtractToDirectory(f.Zip, f.Game);
+        var plugins = Path.Combine(f.Game, "BepInEx/plugins/SevoPlatform");
+        var runtime = Path.Combine(plugins, "Sevo.Framework.Runtime.dll");
+        var sdk = Path.Combine(plugins, "Sevo.Framework.Sdk.dll");
+        if (manualKeel)
+        {
+            Directory.CreateDirectory(plugins);
+            File.Copy(Path.Combine(f.Framework, "Sevo.Framework.Runtime.dll"), runtime);
+            File.Copy(Path.Combine(f.Framework, "Sevo.Framework.Sdk.dll"), sdk);
+        }
+        var bootstrap = Path.Combine(f.Game, "winhttp.dll");
+        var bootstrapTime = File.GetLastWriteTimeUtc(bootstrap);
+        var p = new RuntimeProvisioner(root);
+        Check(p.Prepare(f.Game, f.State, f.Zip, f.Framework).ReusedLoader, "existing loader was not reused");
+        p.ValidatePrepared(f.Game, f.State);
+        Check(p.Prepare(f.Game, f.State, f.Zip, f.Framework).ReusedLoader, "repeat prepare did not preserve reuse");
+        Check(File.GetLastWriteTimeUtc(bootstrap) == bootstrapTime, "bootstrap was rewritten");
+        var owner = Path.Combine(f.Game, ".sevo-runtime-owned.json");
+        var ownership = System.Text.Json.JsonSerializer.Deserialize<RuntimeProvisioner.RuntimeManifest>(File.ReadAllText(owner))!;
+        Check(ownership.SchemaVersion == 2 && ownership.ExternalFiles!.Contains("winhttp.dll"), "old Uplink must refuse external ownership records");
+        Check(File.Exists(runtime) && File.Exists(sdk), "Keel payload was not prepared");
+        File.WriteAllText(bootstrap, "user changed their own loader");
+        Throws(() => p.ValidatePrepared(f.Game, f.State));
+        p.Remove(f.Game, f.State);
+        Check(File.ReadAllText(bootstrap) == "user changed their own loader", "removal touched external bootstrap");
+        Check(File.Exists(runtime) == manualKeel && File.Exists(sdk) == manualKeel, "removal did not honor Keel ownership");
+    }));
+tests.Add(("partial matching loader still refuses preparation", () =>
+{
+    var f = Fixture("partial-external");
+    var bootstrap = Path.Combine(f.Game, "winhttp.dll");
+    File.WriteAllText(bootstrap, "proxy");
+    Throws(() => new RuntimeProvisioner(root).Prepare(f.Game, f.State, f.Zip, f.Framework));
+    Check(File.ReadAllText(bootstrap) == "proxy", "partial loader was modified");
+    Check(!File.Exists(Path.Combine(f.Game, "doorstop_config.ini")), "partial loader was filled in");
+    Check(!File.Exists(Path.Combine(f.State, "sevo-runtime-profile.json")), "partial loader was admitted");
+}));
+tests.Add(("incomplete external preparation rolls back owned files only", () =>
+{
+    var f = Fixture("external-recovery");
+    ZipFile.ExtractToDirectory(f.Zip, f.Game);
+    var p = new RuntimeProvisioner(root);
+    p.Prepare(f.Game, f.State, f.Zip, f.Framework);
+    var owner = Path.Combine(f.Game, ".sevo-runtime-owned.json");
+    var pending = Path.Combine(f.Game, ".sevo-runtime-pending.json");
+    File.Move(owner, pending);
+    var bootstrap = Path.Combine(f.Game, "winhttp.dll");
+    File.WriteAllText(bootstrap, "external edit");
+    Throws(() => p.Prepare(f.Game, f.State, f.Zip, f.Framework));
+    Check(!File.Exists(pending) && !File.Exists(owner), "incomplete ownership was not recovered");
+    Check(!File.Exists(Path.Combine(f.Game, "BepInEx/plugins/SevoPlatform/Sevo.Framework.Runtime.dll")), "owned partial payload remains");
+    Check(File.ReadAllText(bootstrap) == "external edit", "recovery touched external bootstrap");
+}));
+tests.Add(("external schema with missing inventory refuses removal", () =>
+{
+    var f = Fixture("external-missing-inventory");
+    ZipFile.ExtractToDirectory(f.Zip, f.Game);
+    var p = new RuntimeProvisioner(root);
+    p.Prepare(f.Game, f.State, f.Zip, f.Framework);
+    var owner = Path.Combine(f.Game, ".sevo-runtime-owned.json");
+    var manifest = System.Text.Json.JsonSerializer.Deserialize<RuntimeProvisioner.RuntimeManifest>(File.ReadAllText(owner))!;
+    manifest.ExternalFiles = null;
+    File.WriteAllText(owner, System.Text.Json.JsonSerializer.Serialize(manifest));
+    Throws(() => p.Remove(f.Game, f.State));
+    Check(File.Exists(Path.Combine(f.Game, "winhttp.dll")), "malformed record removed external bootstrap");
+}));
 tests.Add(("externally modified runtime blocks removal",()=>{
     var f=Fixture("edited"); var p=new RuntimeProvisioner(root);p.Prepare(f.Game,f.State,f.Zip,f.Framework);
     File.WriteAllText(Path.Combine(f.Game,"winhttp.dll"),"user changed"); Throws(()=>p.Remove(f.Game,f.State));
