@@ -1,0 +1,12 @@
+.tools/
+.refs/
+.cache/
+.superpowers/
+local-evidence/
+lab/
+data/
+artifacts/
+**/bin/
+**/obj/
+*.user
+*.suo

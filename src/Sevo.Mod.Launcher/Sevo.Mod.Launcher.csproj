@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms><ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <AssemblyName>Starship Uplink</AssemblyName>
+    <Product>Starship Uplink</Product>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Sevo.Mod.Core/Sevo.Mod.Core.csproj" />
+    <ProjectReference Include="../Sevo.Mod.Hosting/Sevo.Mod.Hosting.csproj" />
+  </ItemGroup>
+</Project>

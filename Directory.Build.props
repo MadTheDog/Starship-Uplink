@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    <UseSharedCompilation>false</UseSharedCompilation>
+    <Version>0.1.0</Version>
+    <Authors>Sal</Authors>
+    <RepositoryUrl></RepositoryUrl>
+  </PropertyGroup>
+</Project>
