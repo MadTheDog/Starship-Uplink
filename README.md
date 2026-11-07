@@ -2,7 +2,7 @@
 
 Starship Uplink is a Windows mod launcher and package manager for Starship EVO. It installs mods from ZIP packages and GitHub releases, manages which mods load in a profile, and supports version pinning and rollback.
 
-Uplink provisions BepInEx and ships with [Starship Keel](https://github.com/MadTheDog/Starship-Keel), the in-game framework for registering mod content and preserving its IDs.
+Uplink provisions BepInEx and ships with [Starship Keel v0.1.2](https://github.com/MadTheDog/Starship-Keel/releases/tag/v0.1.2), the in-game framework for registering mod content and preserving its IDs.
 
 ## Install and use
 
@@ -21,6 +21,8 @@ Profiles select plugins. Save isolation requires a separate Unity data path. Kee
 **Clean game** is also available directly, including when the old workspace was lost. Close the selected game and review the confirmation before continuing. Uplink releases the profile's game claim and archives its deployment and owned runtime files under `BepInEx/SevoCleanupBackups`, outside the plugin scan path. The package library, saves, configuration, and manually installed files are preserved. For a game still claimed by an accessible workspace, open that workspace to clean it.
 
 To install this version over Uplink 0.1.1 or earlier, close Uplink and copy the contents of the new ZIP's launcher folder into the existing Uplink folder. Keep the `data` workspace at its existing path.
+
+To upgrade Keel in an already prepared game profile, update Uplink first and close Starship EVO. Select the profile and choose **Remove runtime** to clear its previous runtime record. If you installed Keel manually, replace its SDK and runtime DLLs together with the pair from the [Keel release](https://github.com/MadTheDog/Starship-Keel/releases/tag/v0.1.2). Then choose **Prepare game** to install the bundled Keel or verify the manually installed pair. This keeps the profile, content ID registry, installed mods, and saves.
 
 The launcher was developed against Windows x64 Mono, **Steam build 26451593 / 26w45a**, Unity **6000.6.6f1**. Keel checks the game contracts it uses at startup. The build ID records the test target.
 
