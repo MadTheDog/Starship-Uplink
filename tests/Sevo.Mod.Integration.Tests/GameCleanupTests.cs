@@ -49,6 +49,16 @@ static class GameCleanupTests
             Check(new PlatformService(replacement, f.Processes).CreateProfile("new owner", f.Game).Id != f.ProfileId, "new workspace cannot claim cleaned game");
         }));
 
+        tests.Add(("cleanup archives a managed path at the deployment length limit", () =>
+        {
+            var relative = new string('a', 75) + "/" + new string('b', 75) + "/" + new string('c', 48) + ".dll";
+            var f = new Fixture(root, "clean-long-path", relative);
+            var cleaner = new GameCleaner(f.Workspace, f.Processes);
+            var result = cleaner.Clean(cleaner.Inspect(f.Game));
+            var archived = Path.Combine(result.BackupDirectory, "SevoManaged/cleanup-fixture", relative);
+            Check(File.ReadAllText(archived) == "managed payload" && f.Service.ListProfiles().Count == 0, "cleanup failed to archive the supported managed path");
+        }));
+
         tests.Add(("cleanup refuses a live foreign workspace and an invalid marker", () =>
         {
             var f = new Fixture(root, "clean-foreign");
@@ -187,7 +197,7 @@ static class GameCleanupTests
         public ProcessInspector Processes { get; }
         public PlatformService Service { get; }
 
-        public Fixture(string root, string name)
+        public Fixture(string root, string name, string payloadPath = "Managed.dll")
         {
             Target = Path.Combine(root, name);
             Game = Path.Combine(Target, "game");
@@ -199,7 +209,7 @@ static class GameCleanupTests
             using (var zip = ZipFile.Open(package, ZipArchiveMode.Create))
             {
                 Entry(zip, "sevo.mod.json", """{"schemaVersion":1,"id":"cleanup-fixture","name":"Cleanup fixture","version":"1.0.0","payloadRoot":"payload"}""");
-                Entry(zip, "payload/Managed.dll", "managed payload");
+                Entry(zip, "payload/" + payloadPath, "managed payload");
             }
             Service = new PlatformService(Workspace, Processes);
             Service.ImportPackage(package);

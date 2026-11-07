@@ -6,6 +6,7 @@ namespace Sevo.Mod.Core;
 
 internal static class SafeFiles
 {
+    internal const int MetadataSizeLimit = 16*1024*1024;
     internal static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy=JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive=true, WriteIndented=true, UnmappedMemberHandling=JsonUnmappedMemberHandling.Disallow };
     internal static string Relative(string value)
     {
@@ -49,7 +50,7 @@ internal static class SafeFiles
         Ancestors(file);
         try
         {
-            if(new FileInfo(file).Length>16*1024*1024) throw new PlatformException("Metadata is too large: " + file);
+            if(new FileInfo(file).Length>MetadataSizeLimit) throw new PlatformException("Metadata is too large: " + file);
             var bytes=File.ReadAllBytes(file); using var doc=JsonDocument.Parse(bytes,new JsonDocumentOptions { MaxDepth=32 }); CheckJson(doc.RootElement);
             return JsonSerializer.Deserialize<T>(bytes,Json) ?? throw new PlatformException("Empty JSON metadata: " + file);
         }

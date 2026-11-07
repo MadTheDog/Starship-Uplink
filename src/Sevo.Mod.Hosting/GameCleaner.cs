@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Sevo.Mod.Core;
 
@@ -70,7 +71,12 @@ public sealed class GameCleaner
         if (!SameIntent(plan.Intent, state.Intent))
             throw new PlatformException("The cleanup plan changed. Inspect this installation again before cleaning it.");
         var journal = SafeFiles.Under(game, PlatformService.CleanupJournal);
-        if (!state.Resuming) SafeFiles.Write(journal, state.Intent, overwrite: false);
+        if (!state.Resuming)
+        {
+            if (JsonSerializer.SerializeToUtf8Bytes(state.Intent, SafeFiles.Json).Length > SafeFiles.MetadataSizeLimit)
+                throw new PlatformException("The cleanup inventory is too large to record safely. The deployment has been preserved.");
+            SafeFiles.Write(journal, state.Intent, overwrite: false);
+        }
         SafeFiles.Create(state.Backup);
         CheckStopped(game);
 
@@ -109,8 +115,7 @@ public sealed class GameCleaner
         var backup = SafeFiles.Under(game, "BepInEx/SevoCleanupBackups/" + (pending?.BackupId ?? proposedBackup));
         if (IsDirectory(backup) && pending == null)
             throw new PlatformException("The selected cleanup backup already exists. Inspect the game again.");
-        var archived = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var claim = LocateFile(game, backup, ClaimPath, "sevo-profile-owner.json", archived)
+        var claim = LocateFile(game, backup, ClaimPath, "sevo-profile-owner.json")
             ?? throw new PlatformException("The game has no valid Uplink claim to clean. Review any remaining files manually.");
         var owner = PlatformService.ReadCleanupClaim(claim.CurrentPath);
         var profile = platform.InspectCleanupProfile(game, owner);
@@ -122,18 +127,19 @@ public sealed class GameCleaner
         if (managedInGame && managedArchived)
             throw new PlatformException("Both the installed and archived managed deployments exist. Review them before resuming cleanup.");
         var managedFiles = SafeFiles.Inventory(managedArchived ? managedBackup : managed);
-        if (managedArchived)
-            foreach (var entry in managedFiles) archived.Add("SevoManaged/" + entry.Key, entry.Value);
         if (profile != null) platform.VerifyCleanupDeployment(profile, managedFiles);
 
-        var runtimeOwner = LocateFile(game, backup, RuntimeProvisioner.OwnerName, "runtime/" + RuntimeProvisioner.OwnerName, archived);
+        var runtimeBackup = SafeFiles.Under(backup, "runtime");
+        var hasRuntimeBackup = IsDirectory(runtimeBackup);
+        var archivedRuntime = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var runtimeOwner = LocateFile(game, runtimeBackup, RuntimeProvisioner.OwnerName, RuntimeProvisioner.OwnerName, archivedRuntime);
         var runtimeFiles = new List<CleanupFile>();
         var runtimeInventory = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (runtimeOwner != null)
         {
             foreach (var entry in RuntimeProvisioner.ReadCleanupFiles(game, runtimeOwner.CurrentPath))
             {
-                var file = LocateFile(game, backup, entry.Path, "runtime/" + entry.Path, archived);
+                var file = LocateFile(game, runtimeBackup, entry.Path, entry.Path, archivedRuntime);
                 if (file == null) continue; // An already absent owned file requires no move.
                 if (file.Hash != entry.Sha256)
                     throw new PlatformException("An owned runtime file was modified and has been preserved: " + entry.Path);
@@ -155,7 +161,14 @@ public sealed class GameCleaner
             RuntimeOwnerHash = runtimeOwner?.Hash,
             RuntimeFiles = runtimeInventory
         };
-        if (!SafeFiles.Equal(SafeFiles.Inventory(backup), archived))
+        // Inventory each subtree at its own root, as it was before the move.
+        // The backup folder names must not consume the managed path length budget.
+        var backupEntries = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (managedArchived) backupEntries.Add(managedBackup);
+        if (hasRuntimeBackup) backupEntries.Add(runtimeBackup);
+        if (claim.Archived) backupEntries.Add(claim.Destination);
+        if ((Directory.Exists(backup) && Directory.EnumerateFileSystemEntries(backup).Any(path => !backupEntries.Contains(path))) ||
+            !SafeFiles.Equal(SafeFiles.Inventory(runtimeBackup), archivedRuntime))
             throw new PlatformException("Unexpected files are present in the cleanup backup. They have been preserved.");
         if (pending != null)
         {
@@ -185,7 +198,7 @@ public sealed class GameCleaner
         first.HasManagedDirectory == second.HasManagedDirectory && SafeFiles.Equal(first.ManagedFiles, second.ManagedFiles) &&
         first.RuntimeOwnerHash == second.RuntimeOwnerHash && SafeFiles.Equal(first.RuntimeFiles, second.RuntimeFiles);
 
-    private static CleanupFile? LocateFile(string game, string backup, string sourceRelative, string archiveRelative, Dictionary<string, string> archive)
+    private static CleanupFile? LocateFile(string game, string backup, string sourceRelative, string archiveRelative, Dictionary<string, string>? archive = null)
     {
         var source = SafeFiles.Under(game, sourceRelative);
         var destination = SafeFiles.Under(backup, archiveRelative);
@@ -194,7 +207,7 @@ public sealed class GameCleaner
         if (sourceExists && archived) throw new PlatformException("A cleanup file exists in both the game and the backup: " + sourceRelative);
         if (!sourceExists && !archived) return null;
         var hash = SafeFiles.Hash(archived ? destination : source);
-        if (archived) archive.Add(archiveRelative, hash);
+        if (archived) archive?.Add(archiveRelative, hash);
         return new CleanupFile(source, destination, hash, archived);
     }
 

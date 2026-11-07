@@ -55,8 +55,11 @@ public sealed partial class MainForm
         }
         if (choice != install) return;
 
+        var installation = Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
+        if (!installation.Equals(Path.TrimEndingDirectorySeparator(appRoot), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Open the packaged Uplink executable directly to update it. This launcher is using an alternate payload folder.");
         Write($"Downloading and verifying Uplink {update.Version}…");
-        var start = await LauncherUpdater.StageAsync(http, update, appRoot, dataRoot);
+        var start = await LauncherUpdater.StageAsync(http, update, installation, dataRoot);
         if (!CanUseControls) return;
         using var helper = Process.Start(start) ?? throw new InvalidOperationException("Uplink could not start the updater.");
         Close();
