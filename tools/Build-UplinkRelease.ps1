@@ -1,6 +1,9 @@
 param([Parameter(Mandatory)][string]$KeelDirectory)
 . (Join-Path $PSScriptRoot 'Environment.ps1')
 
+$buildProps = [xml](Get-Content -LiteralPath (Join-Path $PlatformRoot 'Directory.Build.props') -Raw)
+$keelVersion = $buildProps.Project.PropertyGroup.BundledKeelVersion
+if ($keelVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Set BundledKeelVersion in Directory.Build.props.' }
 $keel = (Resolve-Path -LiteralPath $KeelDirectory).Path
 $keelChecksums = @{}
 foreach ($line in Get-Content -LiteralPath (Join-Path $keel 'SHA256SUMS.txt')) {
@@ -11,12 +14,15 @@ $keelCommit = (Get-Content -LiteralPath (Join-Path $keel 'SOURCE-COMMIT.txt') -R
 if ($keelCommit -notmatch '^[0-9a-f]{40}$') { throw 'Keel source commit is invalid.' }
 $frameworkNames = @('Sevo.Framework.Runtime.dll', 'Sevo.Framework.Sdk.dll')
 foreach ($name in $frameworkNames) {
-    if ((Get-FileHash -LiteralPath (Join-Path $keel $name)).Hash -ne $keelChecksums[$name]) {
+    $dll = Join-Path $keel $name
+    if ((Get-FileHash -LiteralPath $dll).Hash -ne $keelChecksums[$name]) {
         throw "Keel payload checksum mismatch for $name."
     }
+    $actualVersion = ([Diagnostics.FileVersionInfo]::GetVersionInfo($dll).ProductVersion -split '\+', 2)[0]
+    if ($actualVersion -ne $keelVersion) {
+        throw "Expected Starship Keel $keelVersion in $name but found $actualVersion."
+    }
 }
-$keelVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $keel $frameworkNames[0])).ProductVersion.Split('+')[0]
-if ($keelVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Keel product version is invalid.' }
 
 Push-Location -LiteralPath $PlatformRoot
 try {

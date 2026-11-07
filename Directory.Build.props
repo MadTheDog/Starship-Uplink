@@ -6,7 +6,8 @@
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
     <UseSharedCompilation>false</UseSharedCompilation>
-    <Version>0.1.3</Version>
+    <Version>0.1.4</Version>
+    <BundledKeelVersion>0.1.5</BundledKeelVersion>
     <Authors>Sal</Authors>
     <RepositoryUrl></RepositoryUrl>
   </PropertyGroup>
