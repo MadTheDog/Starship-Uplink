@@ -158,7 +158,12 @@ public sealed partial class PlatformService
     }
     ProfileRecord Mutate(string profileId,Action<ProfileRecord,Catalog> change)
     {
-        using var gate=Lock(); Recover(); var profiles=Profiles(); var before=Find(profiles,profileId); var c=Catalog(); Owner(before); Stopped(before);
+        using var gate=Lock(); Recover();
+        return MutateLocked(Profiles(), Catalog(), profileId, change);
+    }
+    ProfileRecord MutateLocked(Profiles profiles,Catalog c,string profileId,Action<ProfileRecord,Catalog> change)
+    {
+        var before=Find(profiles,profileId); Owner(before); Stopped(before);
         var oldFiles=Expected(before,c); CheckTree(Managed(before),oldFiles,"Installed content");
         var after=System.Text.Json.JsonSerializer.Deserialize<ProfileRecord>(System.Text.Json.JsonSerializer.Serialize(before,SafeFiles.Json),SafeFiles.Json)!;
         change(after,c); var errors=Validate(after,c); if(errors.Count>0)throw new PlatformException(string.Join(Environment.NewLine,errors));
@@ -175,6 +180,7 @@ public sealed partial class PlatformService
     }
     void Recover()
     {
+        RecoverPackageRemoval();
         RecoverCreation();
         if(!File.Exists(journalPath))return; var i=SafeFiles.Read<OperationIntent>(journalPath);
         ValidateProfileRecord(i.Before,"pending operation before state"); ValidateProfileRecord(i.After,"pending operation after state");

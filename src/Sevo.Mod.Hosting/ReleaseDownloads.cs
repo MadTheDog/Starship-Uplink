@@ -10,4 +10,25 @@ public static class ReleaseDownloads
         var directory = SafePath.Child(downloadsDirectory, Guid.NewGuid().ToString("N"));
         return client.DownloadAsync(asset, directory, cancellationToken);
     }
+
+    public static async Task<PackageRecord> ImportPackageAsync(GitHubReleaseClient client, ReleaseAsset asset,
+        string downloadsDirectory, PlatformService service, string repository)
+    {
+        var path = await DownloadAsync(client, asset, downloadsDirectory).ConfigureAwait(false);
+        try
+        {
+            return await Task.Run(() => service.ImportPackage(path, new PackageImportOptions
+            {
+                Repository = repository,
+                AssetName = asset.Name
+            })).ConfigureAwait(false);
+        }
+        finally
+        {
+            SafePath.Check(path);
+            File.Delete(path);
+            var directory = Path.GetDirectoryName(path)!;
+            if (!Directory.EnumerateFileSystemEntries(directory).Any()) Directory.Delete(directory);
+        }
+    }
 }

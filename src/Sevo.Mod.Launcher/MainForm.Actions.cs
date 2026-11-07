@@ -46,10 +46,26 @@ public sealed partial class MainForm
         var assets = release.Assets.Where(x => x.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)).ToList();
         if (assets.Count == 0) throw new InvalidOperationException("This release has no compiled ZIP asset. Source archives cannot be installed as mods.");
         var name = Prompts.Choose(this, "Select the package for your game/runtime", assets.Select(x => x.Name)); if (name == null) return;
-        var asset = assets.Single(x => x.Name == name); var path = await ReleaseDownloads.DownloadAsync(client, asset, Path.Combine(dataRoot, "downloads"));
-        var record = await Task.Run(() => service.ImportPackage(path, new PackageImportOptions { Repository = repository, AssetName = asset.Name }));
+        var asset = assets.Single(x => x.Name == name);
+        var record = await ImportGitHubAssetAsync(client, asset, repository);
         Write($"Imported {record.Name} {record.Version} from {release.PageUrl}.");
     }
+    private Task<PackageRecord> ImportGitHubAssetAsync(GitHubReleaseClient client, ReleaseAsset asset, string repository) =>
+        ReleaseDownloads.ImportPackageAsync(client, asset, Path.Combine(dataRoot, "downloads"), service, repository);
+
+    private async Task RemoveFromLibraryAsync()
+    {
+        var row = library.CurrentRow ?? throw new InvalidOperationException("Select a library package first.");
+        var id = (string)row.Cells["Id"].Value;
+        var name = (string)row.Cells["Name"].Value;
+        var version = (string)row.Cells["Version"].Value;
+        var confirm = MessageBox.Show(this, $"Remove {name} {version} from the package library? You can import it again from its original ZIP.",
+            "Remove from library", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+        if (confirm != DialogResult.Yes) return;
+        await Task.Run(() => service.RemovePackage(id, version));
+        Write($"Removed {name} {version} from the package library.");
+    }
+
     private async Task InstallAsync()
     {
         var profile = Profile(); var row = library.CurrentRow ?? throw new InvalidOperationException("Select a library package first.");
@@ -83,11 +99,15 @@ public sealed partial class MainForm
         var client = new GitHubReleaseClient(http); var release = await client.GetLatestAsync(package.Repository);
         if (!CanUseControls) return;
         if (release.TagName.TrimStart('v', 'V') == mod.Version) { Write(id + " is already on the latest published release."); return; }
-        var name = Prompts.Choose(this, $"Available release {release.TagName} — choose compatible ZIP", release.Assets.Where(x => x.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)).Select(x => x.Name)); if (name == null) return;
-        var asset = release.Assets.Single(x => x.Name == name); var path = await ReleaseDownloads.DownloadAsync(client, asset, Path.Combine(dataRoot, "downloads"));
-        var updated = await Task.Run(() => service.ImportPackage(path, new PackageImportOptions { Repository = package.Repository, AssetName = name }));
+        var name = Prompts.Choose(this, $"Update to {release.TagName} and clear this mod's local rollback", release.Assets.Where(x => x.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)).Select(x => x.Name)); if (name == null) return;
+        var asset = release.Assets.Single(x => x.Name == name);
+        var updated = await ImportGitHubAssetAsync(client, asset, package.Repository);
         if (updated.Id != id) throw new InvalidOperationException("The selected asset has a different mod identity. It was cached but not installed.");
-        await Task.Run(() => service.Install(profile.Id, id, updated.Version)); Write($"Updated {id} to {updated.Version}; previous version is available through Roll back.");
+        var result = await Task.Run(() => service.UpdateFromGitHub(profile.Id, id, mod.Version, updated.Version));
+        Write($"Updated {updated.Name} to {updated.Version}.");
+        if (result.RemovedVersions.Count > 0)
+            Write($"Removed older versions from the package library: {string.Join(", ", result.RemovedVersions)}.");
+        foreach (var warning in result.CleanupWarnings) Write(warning);
     }
     private async Task PrepareAsync()
     {

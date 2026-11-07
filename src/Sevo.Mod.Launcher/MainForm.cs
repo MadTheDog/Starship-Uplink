@@ -40,6 +40,7 @@ public sealed partial class MainForm : Form
         profileBar.Controls.Add(new Label { Text = "Profile", AutoSize = true, Margin = new Padding(0, 8, 12, 0) }); profileBar.Controls.Add(profiles);
         profileBar.Controls.Add(Button("New profile", NewProfileAsync)); profileBar.Controls.Add(Button("Prepare game", PrepareAsync)); profileBar.Controls.Add(Button("Play", PlayAsync)); profileBar.Controls.Add(Button("Validate", ValidateAsync)); profileBar.Controls.Add(Button("Clean game", CleanGameAsync));
         toolbar.Controls.Add(Button("Import ZIP", ImportAsync)); toolbar.Controls.Add(Button("Add from GitHub", AddGitHubAsync));
+        toolbar.Controls.Add(Button("Remove from library", RemoveFromLibraryAsync));
         toolbar.Controls.Add(Button("Install selected", InstallAsync)); toolbar.Controls.Add(Button("Enable / disable", ToggleAsync));
         toolbar.Controls.Add(Button("Check mod update", UpdateAsync)); toolbar.Controls.Add(Button("Pin / unpin", PinAsync));
         toolbar.Controls.Add(Button("Roll back", RollbackAsync)); toolbar.Controls.Add(Button("Remove mod", RemoveAsync)); toolbar.Controls.Add(Button("Remove runtime", RemoveRuntimeAsync)); toolbar.Controls.Add(Button("Open game folder", OpenGameAsync)); toolbar.Controls.Add(Button("Refresh", () => { RefreshViews(); return Task.CompletedTask; }));

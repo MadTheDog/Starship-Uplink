@@ -29,6 +29,150 @@ string Game(string root) { var p=Path.Combine(root,"game"); Directory.CreateDire
 string ModPath(ProfileRecord p,string id="a") => Path.Combine(p.GameDirectory,"BepInEx","plugins","SevoManaged",id,"Mod.dll");
 
 Test("fresh catalog",r=>Check(new PlatformService(r).ListPackages().Count==0));
+
+Test("library removal deletes only the selected cached version", r =>
+{
+    var service = new PlatformService(r);
+    var source = Zip(r);
+    var old = service.ImportPackage(source);
+    service.ImportPackage(source, new PackageImportOptions { Repository = "Owner/Repo", AssetName = "mod.zip" });
+    var current = service.ImportPackage(Zip(r, version: "2.0.0"));
+    service.RemovePackage("a", "1.0.0");
+    Check(service.ListPackages().Single().Version == "2.0.0");
+    Check(!Directory.Exists(Path.GetDirectoryName(old.PayloadDirectory)));
+    Check(Directory.Exists(current.PayloadDirectory) && File.Exists(source));
+    Check(service.ImportPackage(source).Sha256 == old.Sha256);
+});
+
+Test("library removal protects disabled installs and rollback versions", r =>
+{
+    var service = new PlatformService(r, new FakeProcesses());
+    service.ImportPackage(Zip(r));
+    service.ImportPackage(Zip(r, version: "2.0.0"));
+    var profile = service.CreateProfile("Other profile", Game(r));
+    service.Install(profile.Id, "a", "1.0.0");
+    service.Install(profile.Id, "a", "2.0.0");
+    service.SetEnabled(profile.Id, "a", false);
+    Reject(() => service.RemovePackage("a", "2.0.0"));
+    Reject(() => service.RemovePackage("a", "1.0.0"));
+    Check(service.ListPackages().Count == 2);
+    service.Rollback(profile.Id, "a");
+    Check(service.GetProfile(profile.Id).Mods.Single().Version == "1.0.0");
+});
+
+Test("library removal preserves unexpected files in a cache object", r =>
+{
+    var service = new PlatformService(r);
+    var package = service.ImportPackage(Zip(r));
+    var external = Path.Combine(Path.GetDirectoryName(package.PayloadDirectory)!, "owner.txt");
+    File.WriteAllText(external, "keep");
+    Reject(() => service.RemovePackage("a", "1.0.0"));
+    Check(service.ListPackages().Single().Version == "1.0.0");
+    Check(File.ReadAllText(external) == "keep");
+});
+
+foreach (var point in new[] { "package-removal-intent", "package-removal-committed" })
+    Test("library removal recovers interruption at " + point, r =>
+    {
+        var source = Zip(r);
+        var package = new PlatformService(r).ImportPackage(source);
+        var interrupted = new PlatformService(r, new FakeProcesses(), step =>
+        {
+            if (step == point) throw new SimulatedCrash();
+        });
+        try { interrupted.RemovePackage("a", "1.0.0"); throw new Exception("Removal did not reach the checkpoint."); }
+        catch (SimulatedCrash) { }
+        bool committed = point == "package-removal-committed";
+        if (committed) File.Delete(Path.Combine(package.PayloadDirectory, "Mod.dll"));
+        var recovered = new PlatformService(r);
+        Check(recovered.ListPackages().Count == (committed ? 0 : 1));
+        Check(Directory.Exists(package.PayloadDirectory) != committed);
+        Check(recovered.ImportPackage(source).Sha256 == package.Sha256);
+    });
+
+Test("GitHub update prunes older source versions and preserves references and other packages", r =>
+{
+    var service = new PlatformService(r, new FakeProcesses());
+    var github = new PackageImportOptions { Repository = "Owner/Repo" };
+    var unused = service.ImportPackage(Zip(r, version: "0.9.0"), github);
+    var protectedRollback = service.ImportPackage(Zip(r, version: "1.0.0"), github);
+    var protectedInstall = service.ImportPackage(Zip(r, version: "1.1.0"), github);
+    var replaced = service.ImportPackage(Zip(r, version: "1.2.0"), github);
+    var next = service.ImportPackage(Zip(r, version: "2.0.0"), github);
+    service.ImportPackage(Zip(r, version: "3.0.0"), github);
+    service.ImportPackage(Zip(r, version: "0.8.0"));
+    service.ImportPackage(Zip(r, "b"), github);
+    var current = service.CreateProfile("Updating", Game(r));
+    var other = service.CreateProfile("Other", Game(Path.Combine(r, "other")));
+    service.Install(current.Id, "a", replaced.Version);
+    service.Install(other.Id, "a", protectedRollback.Version);
+    service.Install(other.Id, "a", protectedInstall.Version);
+    service.SetEnabled(other.Id, "a", false);
+
+    var result = service.UpdateFromGitHub(current.Id, "a", replaced.Version, next.Version);
+    Check(result.RemovedVersions.Order().SequenceEqual(new[] { "0.9.0", "1.2.0" }));
+    Check(result.CleanupWarnings.Count == 0);
+    Check(service.ListPackages().Where(p => p.Id == "a").Select(p => p.Version).Order()
+        .SequenceEqual(new[] { "0.8.0", "1.0.0", "1.1.0", "2.0.0", "3.0.0" }));
+    Check(service.ListPackages().Any(p => p.Id == "b"));
+    Check(!Directory.Exists(Path.GetDirectoryName(unused.PayloadDirectory)) &&
+          !Directory.Exists(Path.GetDirectoryName(replaced.PayloadDirectory)));
+    Check(service.GetProfile(current.Id).Mods.Single().PreviousVersion == null);
+    Check(File.ReadAllText(ModPath(current)) == "assembly-2.0.0");
+    service.Rollback(other.Id, "a");
+    Check(service.GetProfile(other.Id).Mods.Single().Version == "1.0.0");
+});
+
+Test("failed GitHub update retains previous package bytes and profile", r =>
+{
+    var service = new PlatformService(r, new FakeProcesses());
+    var github = new PackageImportOptions { Repository = "Owner/Repo" };
+    var old = service.ImportPackage(Zip(r), github);
+    service.ImportPackage(Zip(r, version: "2.0.0", deps: new() { ["missing"] = "*" }), github);
+    var profile = service.Install(service.CreateProfile("Current", Game(r)).Id, "a", old.Version);
+    Reject(() => service.UpdateFromGitHub(profile.Id, "a", old.Version, "2.0.0"));
+    Reject(() => service.UpdateFromGitHub(profile.Id, "a", "0.9.0", "2.0.0"));
+    Check(service.GetProfile(profile.Id).Mods.Single().Version == old.Version);
+    Check(File.ReadAllText(ModPath(profile)) == "assembly-1.0.0");
+    Check(service.ListPackages().Count == 2 && Directory.Exists(old.PayloadDirectory));
+});
+
+Test("GitHub update reports an edited old cache without undoing a successful install", r =>
+{
+    var service = new PlatformService(r, new FakeProcesses());
+    var github = new PackageImportOptions { Repository = "Owner/Repo" };
+    var old = service.ImportPackage(Zip(r), github);
+    service.ImportPackage(Zip(r, version: "2.0.0"), github);
+    var profile = service.Install(service.CreateProfile("Current", Game(r)).Id, "a", old.Version);
+    var edited = Path.Combine(old.PayloadDirectory, "Mod.dll");
+    File.WriteAllText(edited, "owner edit");
+    var result = service.UpdateFromGitHub(profile.Id, "a", old.Version, "2.0.0");
+    Check(result.CleanupWarnings.Count == 1 && result.RemovedVersions.Count == 0);
+    Check(File.ReadAllText(edited) == "owner edit");
+    Check(service.ListPackages().Count == 2 && File.ReadAllText(ModPath(profile)) == "assembly-2.0.0");
+});
+
+Test("interrupted GitHub update restores deployment before any cache pruning", r =>
+{
+    var service = new PlatformService(r, new FakeProcesses());
+    var github = new PackageImportOptions { Repository = "Owner/Repo" };
+    var old = service.ImportPackage(Zip(r), github);
+    service.ImportPackage(Zip(r, version: "2.0.0"), github);
+    var profile = service.Install(service.CreateProfile("Current", Game(r)).Id, "a", old.Version);
+    var interrupted = new PlatformService(r, new FakeProcesses(), step =>
+    {
+        if (step == "new-moved") throw new SimulatedCrash();
+    });
+    try
+    {
+        interrupted.UpdateFromGitHub(profile.Id, "a", old.Version, "2.0.0");
+        throw new Exception("Update did not reach the checkpoint.");
+    }
+    catch (SimulatedCrash) { }
+    Check(service.GetProfile(profile.Id).Mods.Single().Version == "1.0.0");
+    Check(File.ReadAllText(ModPath(profile)) == "assembly-1.0.0" && Directory.Exists(old.PayloadDirectory));
+    Check(service.UpdateFromGitHub(profile.Id, "a", old.Version, "2.0.0").RemovedVersions.Single() == "1.0.0");
+});
 Test("import persists immutable payload and archive",r=> { var s=new PlatformService(r); var p=s.ImportPackage(Zip(r)); Check(File.ReadAllText(Path.Combine(p.PayloadDirectory,"Mod.dll"))=="assembly-1.0.0"); Check(new PlatformService(r).ListPackages().Single().Sha256==p.Sha256); });
 Test("install disable enable remove preserves config",r=> { var s=new PlatformService(r); s.ImportPackage(Zip(r)); var g=Game(r); Directory.CreateDirectory(Path.Combine(g,"BepInEx","config")); var c=Path.Combine(g,"BepInEx","config","a.cfg"); File.WriteAllText(c,"owner"); var p=s.CreateProfile("Test",g); p=s.Install(p.Id,"a"); Check(File.Exists(ModPath(p))); p=s.SetEnabled(p.Id,"a",false); Check(!File.Exists(ModPath(p))); p=s.SetEnabled(p.Id,"a",true); Check(File.Exists(ModPath(p))); s.Remove(p.Id,"a"); Check(!File.Exists(ModPath(p))); Check(File.ReadAllText(c)=="owner"); });
 Test("same version cannot be replaced",r=> { var s=new PlatformService(r); s.ImportPackage(Zip(r)); Reject(()=>s.ImportPackage(Zip(r,extra:new(){["payload/change.txt"]="changed"}))); });

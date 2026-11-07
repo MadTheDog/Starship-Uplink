@@ -220,6 +220,18 @@ tests.Add(("same named GitHub assets update native packages without replacing pr
     Check(service.GetProfile(profile.Id).Mods.Single().Version=="2.0.0","same filename update failed");
     service.Rollback(profile.Id,old.Id);Check(service.GetProfile(profile.Id).Mods.Single().Version=="1.0.0","previous version was not retained");
     Check(File.ReadAllBytes(one).SequenceEqual(first),"rollback changed original download");
+
+    var staging = Path.Combine(root, "github-import-staging");
+    var update = ReleaseDownloads.ImportPackageAsync(client,
+        new ReleaseAsset { Name = "mod.zip", DownloadUrl = url + "v2/mod.zip" },
+        staging, service, "example/mod").GetAwaiter().GetResult();
+    Check(!Directory.EnumerateFileSystemEntries(staging).Any(), "GitHub import kept a second copy of the downloaded ZIP");
+    var cleanup = service.UpdateFromGitHub(profile.Id, old.Id, old.Version, update.Version);
+    Check(cleanup.RemovedVersions.SequenceEqual(new[] { "1.0.0" }), "GitHub update did not prune the replaced package");
+    Check(!Directory.Exists(old.PayloadDirectory) && File.ReadAllBytes(one).SequenceEqual(first),
+        "GitHub update did not distinguish the package object from the source ZIP");
+    Check(service.GetProfile(profile.Id).Mods.Single().Version == "2.0.0" && service.ValidateProfile(profile.Id).Count == 0,
+        "GitHub update left the profile invalid");
 }));
 var articleRoot=Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"../../../../../local-evidence/test-articles"));
 var graphicsZip=Path.Combine(articleRoot,"Sals-Graphical-Tweaks-Unity6-2.0.1.zip");

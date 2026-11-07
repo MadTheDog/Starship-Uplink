@@ -14,6 +14,10 @@ Uplink provisions BepInEx and ships with [Starship Keel v0.1.5](https://github.c
 
 Profiles select plugins. Save isolation requires a separate Unity data path. Keep backups when testing experimental content. If Uplink reports a missing or different loader file, use a clean game copy or repair the external loader before preparing it. Uplink supports BepInEx 5.4.23.5 for Windows x64 Mono with `HideManagerGameObject = true` under `[Chainloader]` in `BepInEx.cfg`. **Remove runtime** removes the files Uplink installed and preserves verified external files.
 
+Select a version in **Package library** and choose **Remove from library** to delete its cached ZIP and payload. Uplink protects versions installed in any profile, including disabled mods, and versions reserved for rollback.
+
+After **Check mod update** installs a newer GitHub release, Uplink clears that mod's rollback slot in the updated profile and removes older cached versions from the same repository that no profile uses. You can reimport an older ZIP to reinstall it. Switching versions with **Install selected** still records a local rollback.
+
 ## Update or clean up
 
 **Update Uplink** checks the stable GitHub release. If a newer version is available, you can install it in place and keep your profiles, or clean a selected game folder. Uplink verifies the downloaded ZIP, backs up the old launcher files, and restarts with the same workspace. The updater uses the release ZIP layout and a writable launcher directory.
