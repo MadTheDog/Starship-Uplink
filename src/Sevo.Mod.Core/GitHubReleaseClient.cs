@@ -32,31 +32,61 @@ public sealed class GitHubReleaseClient
     {
         var request=new HttpRequestMessage(HttpMethod.Get,uri); request.Headers.UserAgent.ParseAdd("Sevo-Mod-Platform/0.1"); request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(accept)); request.Headers.Add("X-GitHub-Api-Version","2022-11-28"); return request;
     }
-    public async Task<ReleaseInfo> GetLatestAsync(string repository,CancellationToken cancellationToken=default)
+    public Task<ReleaseInfo> GetLatestAsync(string repository,CancellationToken cancellationToken=default)
+        => ReadReleasesAsync(repository,"latest",r =>
+        {
+            var release=ParseRelease(repository,r);
+            if(release.Prerelease)throw new PlatformException("GitHub returned a prerelease from the stable release endpoint.");
+            return release;
+        },cancellationToken);
+
+    // Keel publishes preview releases with ordinary vX.Y.Z tags. Other consumers keep the stable-only endpoint.
+    internal async Task<IReadOnlyList<ReleaseInfo>> GetPublishedAsync(string repository,CancellationToken cancellationToken=default)
+    {
+        const int pageSize=30;
+        var releases=new List<ReleaseInfo>();
+        for(int page=1; ; page++)
+        {
+            var result=await ReadReleasesAsync(repository,$"?per_page={pageSize}&page={page}",json =>
+                (Count:json.GetArrayLength(), Releases:json.EnumerateArray()
+                    .Where(r=>!r.GetProperty("draft").GetBoolean()).Select(r=>ParseRelease(repository,r)).ToArray()),
+                cancellationToken).ConfigureAwait(false);
+            releases.AddRange(result.Releases);
+            if(result.Count<pageSize)return releases;
+        }
+    }
+
+    async Task<T> ReadReleasesAsync<T>(string repository,string endpoint,Func<JsonElement,T> parse,CancellationToken cancellationToken)
     {
         ValidateRepository(repository); cancellationToken.ThrowIfCancellationRequested();
-        using var request=Request(new Uri("https://api.github.com/repos/"+repository+"/releases/latest"),"application/vnd.github+json");
+        string suffix=endpoint.StartsWith('?') ? endpoint : "/"+endpoint;
+        using var request=Request(new Uri("https://api.github.com/repos/"+repository+"/releases"+suffix),"application/vnd.github+json");
         try
         {
             using var response=await client.SendAsync(request,HttpCompletionOption.ResponseHeadersRead,cancellationToken).ConfigureAwait(false); response.EnsureSuccessStatusCode();
             if(response.RequestMessage?.RequestUri?.Host!="api.github.com")throw new PlatformException("GitHub API redirected outside its official API host.");
             using var input=await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false); using var bytes=new MemoryStream(); await CopyBounded(input,bytes,4*1024*1024,cancellationToken).ConfigureAwait(false); bytes.Position=0;
-            using var json=await JsonDocument.ParseAsync(bytes,new JsonDocumentOptions { MaxDepth=32 },cancellationToken).ConfigureAwait(false); var r=json.RootElement;
-            var release=new ReleaseInfo { TagName=r.GetProperty("tag_name").GetString()??throw new PlatformException("Release tag is missing."),PageUrl=r.GetProperty("html_url").GetString()??"",Prerelease=r.GetProperty("prerelease").GetBoolean() };
-            if(release.Prerelease)throw new PlatformException("GitHub returned a prerelease from the stable release endpoint.");
-            if(!Uri.TryCreate(release.PageUrl,UriKind.Absolute,out var page)||page.Scheme!="https"||page.Host!="github.com"||!page.AbsolutePath.StartsWith("/"+repository+"/releases/",StringComparison.OrdinalIgnoreCase))throw new PlatformException("Release page URL does not match the requested repository.");
-            foreach(var a in r.GetProperty("assets").EnumerateArray())
-            {
-                var name=a.GetProperty("name").GetString()??""; SafeFiles.Relative(name); if(name.Contains('/'))throw new PlatformException("Release asset has an unsafe filename.");
-                var url=a.GetProperty("browser_download_url").GetString()??""; var uri=Official(url); if(!uri.AbsolutePath.StartsWith("/"+repository+"/releases/download/",StringComparison.OrdinalIgnoreCase))throw new PlatformException("Release asset belongs to a different repository.");
-                string? sha=null; if(a.TryGetProperty("digest",out var d)&&d.ValueKind==JsonValueKind.String) { var digest=d.GetString()!; if(!Regex.IsMatch(digest,"^sha256:[0-9a-fA-F]{64}$"))throw new PlatformException("Unsupported release asset digest."); sha=digest[7..].ToLowerInvariant(); }
-                release.Assets.Add(new ReleaseAsset { Name=name,DownloadUrl=url,Sha256=sha });
-            }
-            return release;
+            using var json=await JsonDocument.ParseAsync(bytes,new JsonDocumentOptions { MaxDepth=32 },cancellationToken).ConfigureAwait(false);
+            return parse(json.RootElement);
         }
         catch(HttpRequestException ex) { throw new PlatformException("GitHub release request failed: "+ex.Message,ex); }
         catch(Exception ex) when(ex is JsonException or KeyNotFoundException or InvalidOperationException) { throw new PlatformException("GitHub returned malformed release metadata.",ex); }
     }
+
+    static ReleaseInfo ParseRelease(string repository,JsonElement r)
+    {
+        var release=new ReleaseInfo { TagName=r.GetProperty("tag_name").GetString()??throw new PlatformException("Release tag is missing."),PageUrl=r.GetProperty("html_url").GetString()??"",Prerelease=r.GetProperty("prerelease").GetBoolean() };
+        if(!Uri.TryCreate(release.PageUrl,UriKind.Absolute,out var page)||page.Scheme!="https"||page.Host!="github.com"||!page.AbsolutePath.StartsWith("/"+repository+"/releases/",StringComparison.OrdinalIgnoreCase))throw new PlatformException("Release page URL does not match the requested repository.");
+        foreach(var a in r.GetProperty("assets").EnumerateArray())
+        {
+            var name=a.GetProperty("name").GetString()??""; SafeFiles.Relative(name); if(name.Contains('/'))throw new PlatformException("Release asset has an unsafe filename.");
+            var url=a.GetProperty("browser_download_url").GetString()??""; var uri=Official(url); if(!uri.AbsolutePath.StartsWith("/"+repository+"/releases/download/",StringComparison.OrdinalIgnoreCase))throw new PlatformException("Release asset belongs to a different repository.");
+            string? sha=null; if(a.TryGetProperty("digest",out var d)&&d.ValueKind==JsonValueKind.String) { var digest=d.GetString()!; if(!Regex.IsMatch(digest,"^sha256:[0-9a-fA-F]{64}$"))throw new PlatformException("Unsupported release asset digest."); sha=digest[7..].ToLowerInvariant(); }
+            release.Assets.Add(new ReleaseAsset { Name=name,DownloadUrl=url,Sha256=sha });
+        }
+        return release;
+    }
+
     public async Task<string> DownloadAsync(ReleaseAsset asset,string destinationDirectory,CancellationToken cancellationToken=default)
     {
         cancellationToken.ThrowIfCancellationRequested(); var uri=Official(asset.DownloadUrl); SafeFiles.Relative(asset.Name); if(asset.Name.Contains('/'))throw new PlatformException("Unsafe release asset filename.");

@@ -36,6 +36,9 @@ public sealed partial class MainForm : Form
         var header = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = true, AutoSize = true };
         header.Controls.Add(new Label { Text = "Starship Uplink", Font = new Font(Font.FontFamily, 22, FontStyle.Bold), AutoSize = true }); header.Controls.Add(status);
         header.Controls.Add(Button("Update Uplink", UpdateLauncherAsync));
+        keelButton = Button("Check Keel update", UpdateKeelAsync);
+        keelButton.Visible = false;
+        header.Controls.Add(keelButton);
         var profileBar = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = true, AutoSize = true };
         profileBar.Controls.Add(new Label { Text = "Profile", AutoSize = true, Margin = new Padding(0, 8, 12, 0) }); profileBar.Controls.Add(profiles);
         profileBar.Controls.Add(Button("New profile", NewProfileAsync)); profileBar.Controls.Add(Button("Prepare game", PrepareAsync)); profileBar.Controls.Add(Button("Play", PlayAsync)); profileBar.Controls.Add(Button("Validate", ValidateAsync)); profileBar.Controls.Add(Button("Clean game", CleanGameAsync));
@@ -62,7 +65,7 @@ public sealed partial class MainForm : Form
                 Write("Import a mod ZIP or add its GitHub repository. Profiles select plugins; they do not isolate game saves.");
                 return Task.CompletedTask;
             }, true);
-            if (CanUseControls) await NoticeLauncherUpdateAsync();
+            if (CanUseControls) await Task.WhenAll(NoticeLauncherUpdateAsync(), NoticeKeelUpdateAsync());
         };
         FormClosed += (_, _) => { closed = true; http.Dispose(); };
     }
@@ -124,6 +127,7 @@ public sealed partial class MainForm : Form
             if (profiles.SelectedItem is ProfileChoice choice)
             {
                 var profile = service.GetProfile(choice.Id); target.Text = "Game: " + profile.GameDirectory;
+                RefreshKeelButton(profile.GameDirectory);
                 var names = packages.ToDictionary(x => (x.Id, x.Version), x => x.Name);
                 installed.DataSource = profile.Mods.Select(x => new
                 {
@@ -140,6 +144,7 @@ public sealed partial class MainForm : Form
             }
             else
             {
+                RefreshKeelButton(null);
                 installed.DataSource = null;
                 target.Text = "Create a profile to choose a game installation.";
             }

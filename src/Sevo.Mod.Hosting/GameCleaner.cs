@@ -109,7 +109,8 @@ public sealed class GameCleaner
             (pending.SchemaVersion != 1 || !Guid.TryParseExact(pending.BackupId, "N", out _) ||
              pending.ManagedFiles == null || pending.RuntimeFiles == null))
             throw new PlatformException("The pending game cleanup record is invalid. Its files have been preserved.");
-        if (RegularFileExists(SafeFiles.Under(game, RuntimeProvisioner.PendingName)))
+        if (RegularFileExists(SafeFiles.Under(game, RuntimeProvisioner.PendingName)) ||
+            RegularFileExists(SafeFiles.Under(game, RuntimeProvisioner.PendingKeelName)))
             throw new PlatformException("The game has a pending runtime operation. Resolve it before cleanup.");
 
         var backup = SafeFiles.Under(game, "BepInEx/SevoCleanupBackups/" + (pending?.BackupId ?? proposedBackup));

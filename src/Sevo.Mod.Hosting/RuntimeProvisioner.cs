@@ -12,7 +12,7 @@ public sealed record RuntimePreparation(string StateDirectory, int FilesInstalle
 }
 
 /// <summary>Owns known bootstrap files separately from ordinary mod payloads.</summary>
-public sealed class RuntimeProvisioner
+public sealed partial class RuntimeProvisioner
 {
     private readonly string root;
     private readonly IGameProcessInspector processes;
@@ -29,6 +29,18 @@ public sealed class RuntimeProvisioner
         using var guard = Acquire(state); PlatformService.AssertNoGameCleanup(game); CheckNotRunning(game); Recover(game);
         var desired = ReadPayload(loaderZip, frameworkDirectory);
         var old = ReadManifest(game, OwnerName);
+        if (old != null && ManagedKeel(old) is { } installedEntries)
+        {
+            // An independently updated profile must not be downgraded by the bundled payload.
+            var paths = installedEntries.Select(entry => SafePath.Child(game, entry.Path)).ToArray();
+            var installedVersion = paths.All(File.Exists) ? ReadKeelVersion(paths) : null;
+            var bundledVersion = ReadKeelVersion(KeelUpdater.Files.Select(file => SafePath.Child(frameworkDirectory, file)).ToArray());
+            if (installedVersion != null && bundledVersion != null && installedVersion > bundledVersion)
+            {
+                Verify(game, old, false);
+                for (int i = 0; i < paths.Length; i++) desired[installedEntries[i].Path] = File.ReadAllBytes(paths[i]);
+            }
+        }
         bool reuseLoader = old != null
             ? old.ExternalFiles?.Any(LoaderDependency) == true
             : desired.Keys.Any(path => (LoaderDependency(path) || path == ".doorstop_version") && File.Exists(SafePath.Child(game, path)));
@@ -257,6 +269,7 @@ public sealed class RuntimeProvisioner
     }
     private static void Recover(string game)
     {
+        RecoverKeel(game);
         var pending = ReadManifest(game, PendingName); if (pending == null) return;
         var complete = ReadManifest(game, OwnerName); Verify(game, pending, true, checkExternal: complete != null);
         if (complete != null)

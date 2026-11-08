@@ -2,7 +2,7 @@
 
 Starship Uplink is a Windows mod launcher and package manager for Starship EVO. It installs mods from ZIP packages and GitHub releases, manages which mods load in a profile, and supports version pinning and rollback.
 
-Uplink provisions BepInEx and ships with [Starship Keel v0.1.5](https://github.com/MadTheDog/Starship-Keel/releases/tag/v0.1.5), the in-game framework for registering mod content and preserving its IDs.
+Uplink provisions BepInEx and ships with [Starship Keel v0.1.7 Preview](https://github.com/MadTheDog/Starship-Keel/releases/tag/v0.1.7), the in-game framework for registering mod content and preserving its IDs.
 
 ## Install and use
 
@@ -26,7 +26,9 @@ After **Check mod update** installs a newer GitHub release, Uplink clears that m
 
 To install this version over Uplink 0.1.1 or earlier, close Uplink and copy the contents of the new ZIP's launcher folder into the existing Uplink folder. Keep the `data` workspace at its existing path.
 
-To upgrade Keel in an already prepared game profile, update Uplink first and close Starship EVO. Select the profile and choose **Remove runtime** to clear its previous runtime record. If you installed Keel manually, replace its SDK and runtime DLLs together with the pair from the [Keel release](https://github.com/MadTheDog/Starship-Keel/releases/tag/v0.1.5). Then choose **Prepare game** to install the bundled Keel or verify the manually installed pair. This keeps the profile, content ID registry, installed mods, and saves.
+When a newer published Keel release is available for the selected profile, **Keel update available** appears in the header. Close Starship EVO, then select the button and confirm the target profile and version. Keel currently publishes previews; Uplink labels those in the confirmation. **Check Keel update** retries the release check. Uplink verifies the official BepInEx ZIP and replaces only the two Keel DLLs it manages for that profile. BepInEx, installed mods, content IDs, configuration, and saves are preserved.
+
+If the update is interrupted, close the game and choose **Prepare game** or **Play** to finish it. Uplink leaves manually installed Keel alone; update both DLLs from the [Keel release](https://github.com/MadTheDog/Starship-Keel/releases) manually, then prepare the runtime again after removing Uplink's old runtime record with **Remove runtime**.
 
 The launcher was developed against Windows x64 Mono, **Steam build 26451593 / 26w45a**, Unity **6000.6.6f1**. Keel checks the game contracts it uses at startup. The build ID records the test target.
 
@@ -39,7 +41,7 @@ dotnet publish src/Sevo.Mod.Launcher/Sevo.Mod.Launcher.csproj -c Release -o arti
 dotnet publish src/Sevo.Mod.Cli/Sevo.Mod.Cli.csproj -c Release -o artifacts/uplink/cli
 ```
 
-For **Prepare game**, create `artifacts/uplink/framework` and put `Sevo.Framework.Runtime.dll` and `Sevo.Framework.Sdk.dll` from the [Keel release pinned by `BundledKeelVersion`](https://github.com/MadTheDog/Starship-Keel/releases/tag/v0.1.5) there. `KEEL-RELEASE.txt` in the Uplink download identifies its bundled version and source commit.
+For **Prepare game**, create `artifacts/uplink/framework` and put `Sevo.Framework.Runtime.dll` and `Sevo.Framework.Sdk.dll` from the [Keel release pinned by `BundledKeelVersion`](https://github.com/MadTheDog/Starship-Keel/releases/tag/v0.1.7) there. `KEEL-RELEASE.txt` in the Uplink download identifies its bundled version and source commit.
 
 To build the update-compatible ZIP from a clean Git checkout, use PowerShell 7 and run `./tools/Build-UplinkRelease.ps1 -KeelDirectory <extracted-keel-release>`. The script writes the ZIP and its SHA-256 under `artifacts/releases`.
 
