@@ -32,7 +32,9 @@ If an older Uplink refuses to update because its bundled Keel files changed, ext
 
 To install this version over Uplink 0.1.1 or earlier, close Uplink and copy the contents of the new ZIP's launcher folder into the existing Uplink folder. Keep the `data` workspace at its existing path.
 
-When a newer published Keel release is available for the selected profile, **Keel update available** appears in the header. Close Starship EVO, then select the button and confirm the target profile and version. Keel currently publishes previews; Uplink labels those in the confirmation. **Check Keel update** retries the release check. Uplink verifies the official BepInEx ZIP and replaces only the two Keel DLLs it manages for that profile. BepInEx, installed mods, content IDs, configuration, and saves are preserved.
+The version box shows the running Uplink version and the Keel version in the selected game profile. An unprepared profile shows the bundled Keel version separately. **Update Uplink** updates the launcher, and **Update Keel** checks and updates the selected profile independently. If **Update Keel** is unavailable, the version box explains whether to select or prepare a profile, resume an interrupted update, or manage a manual installation.
+
+Close Starship EVO before applying a Keel update. Uplink verifies the official BepInEx ZIP and replaces the two Keel DLLs it manages for the selected profile. The confirmation labels preview releases.
 
 If the update is interrupted, close the game and choose **Prepare game** or **Play** to finish it. Uplink leaves manually installed Keel alone; update both DLLs from the [Keel release](https://github.com/MadTheDog/Starship-Keel/releases) manually, then prepare the runtime again after removing Uplink's old runtime record with **Remove runtime**.
 

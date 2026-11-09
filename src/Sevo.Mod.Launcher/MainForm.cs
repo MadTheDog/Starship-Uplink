@@ -24,6 +24,8 @@ public sealed partial class MainForm : Form
         appRoot = Path.GetFullPath(root); dataRoot = workspace == null ? Path.Combine(appRoot, "data") : Path.GetFullPath(workspace); service = new PlatformService(dataRoot);
         Text = "Starship Uplink";
         FormBorderStyle = FormBorderStyle.Sizable;
+        AutoScaleDimensions = new SizeF(96, 96);
+        AutoScaleMode = AutoScaleMode.Dpi;
         MinimumSize = new Size(800, 540);
         using var iconStream = typeof(MainForm).Assembly.GetManifestResourceStream("LandingPort.ico")!;
         using var iconResource = new Icon(iconStream);
@@ -34,28 +36,32 @@ public sealed partial class MainForm : Form
         Size = new Size(Math.Min(1180, available.Width - 30), Math.Min(840, available.Height - 45));
         StartPosition = FormStartPosition.CenterScreen; Font = new Font("Segoe UI", 10); BackColor = Color.FromArgb(245, 247, 250);
         http.DefaultRequestHeaders.UserAgent.ParseAdd("StarshipUplink/" + UplinkVersion);
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 1, RowCount = 5 };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 1, RowCount = 6 };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 88));
-        var header = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = true, AutoSize = true };
-        header.Controls.Add(new Label { Text = "Starship Uplink", Font = new Font(Font.FontFamily, 22, FontStyle.Bold), AutoSize = true }); header.Controls.Add(status);
-        header.Controls.Add(Button("Update Uplink", UpdateLauncherAsync));
-        keelButton = Button("Check Keel update", UpdateKeelAsync);
-        keelButton.Visible = false;
-        header.Controls.Add(keelButton);
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 105));
+        var commands = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true, Margin = Padding.Empty };
+        commands.Controls.Add(new Label { Text = "Starship Uplink", Font = new Font(Font.FontFamily, 22, FontStyle.Bold),
+            AutoSize = true, Margin = new Padding(3, 0, 14, 3) });
+        commands.Controls.Add(Button("Update Uplink", UpdateLauncherAsync));
+        keelButton = Button("Update Keel", UpdateKeelAsync);
+        commands.Controls.Add(keelButton);
+        commands.Controls.Add(status);
         var profileBar = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = true, AutoSize = true };
         profileBar.Controls.Add(new Label { Text = "Profile", AutoSize = true, Margin = new Padding(0, 8, 12, 0) }); profileBar.Controls.Add(profiles);
         profileBar.Controls.Add(Button("New profile", NewProfileAsync));
         profileBar.Controls.Add(Button("Prepare game", PrepareAsync));
         profileBar.Controls.Add(Button("Play", PlayAsync));
         profileBar.Controls.Add(BuildGameTools());
-        layout.Controls.Add(header, 0, 0);
-        layout.Controls.Add(profileBar, 0, 1);
-        layout.Controls.Add(target, 0, 2);
-        layout.Controls.Add(BuildWorkspace(), 0, 3);
-        layout.Controls.Add(Panel("Activity", log), 0, 4);
+        layout.Controls.Add(commands, 0, 0);
+        layout.Controls.Add(BuildVersionBox(), 0, 1);
+        layout.Controls.Add(profileBar, 0, 2);
+        layout.Controls.Add(target, 0, 3);
+        layout.Controls.Add(BuildWorkspace(), 0, 4);
+        layout.Controls.Add(BuildActivityPanel(), 0, 5);
         Controls.Add(layout);
         profiles.SelectedIndexChanged += async (_, _) =>
         {
@@ -96,10 +102,18 @@ public sealed partial class MainForm : Form
         };
         return grid;
     }
-    private static Control Panel(string title, Control content)
+    private Control BuildActivityPanel()
     {
-        var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, 32, 8, 8) }; panel.Controls.Add(content);
-        panel.Controls.Add(new Label { Text = title, Dock = DockStyle.Top, Height = 28, Font = new Font("Segoe UI", 10, FontStyle.Bold) }); return panel;
+        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2,
+            Margin = new Padding(3, 4, 3, 0), AccessibleName = "Activity panel" };
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        panel.Controls.Add(new Label { Text = "Activity", AutoSize = true,
+            Font = new Font(Font, FontStyle.Bold), Margin = new Padding(0, 0, 0, 4) }, 0, 0);
+        log.Margin = Padding.Empty;
+        panel.Controls.Add(log, 0, 1);
+        return panel;
     }
     private Button Button(string text, Func<Task> action)
     {

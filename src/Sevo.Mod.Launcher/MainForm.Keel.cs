@@ -6,18 +6,39 @@ namespace Sevo.Mod.Launcher;
 public sealed partial class MainForm
 {
     private readonly Button keelButton;
+    private readonly Label keelVersionLabel = new() { AutoSize = true, AccessibleName = "Keel version" };
     private KeelUpdateOffer? latestKeel;
-    private Version? managedKeelVersion;
+    private Version? bundledKeel;
+    private ProfileKeelStatus? profileKeel;
+
+    private Control BuildVersionBox()
+    {
+        try { bundledKeel = RuntimeProvisioner.GetBundledKeelVersion(Path.Combine(appRoot, "framework")); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            // Keep version information available even if the bundled files cannot be read.
+        }
+
+        var box = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true,
+            BorderStyle = BorderStyle.FixedSingle, Padding = new Padding(6, 2, 6, 2),
+            Margin = new Padding(3, 0, 3, 5), AccessibleName = "Installed versions" };
+        box.Controls.Add(new Label { Text = $"Uplink {UplinkVersion}", AutoSize = true,
+            AccessibleName = "Uplink version", Margin = new Padding(3, 2, 16, 2) });
+        keelVersionLabel.Margin = new Padding(3, 2, 3, 2);
+        box.Controls.Add(keelVersionLabel);
+        ShowKeelOffer();
+        return box;
+    }
 
     private void RefreshKeelButton(string? game)
     {
-        managedKeelVersion = null;
+        profileKeel = null;
         if (game != null)
         {
-            try { managedKeelVersion = RuntimeProvisioner.GetManagedKeelVersion(game); }
+            try { profileKeel = RuntimeProvisioner.InspectKeel(game); }
             catch (Exception ex) when (ex is PlatformException or IOException or UnauthorizedAccessException or InvalidOperationException)
             {
-                // A broken or unavailable runtime should not block the rest of the profile UI.
+                profileKeel = new(ProfileKeelState.Unverified);
             }
         }
         ShowKeelOffer();
@@ -25,10 +46,20 @@ public sealed partial class MainForm
 
     private void ShowKeelOffer()
     {
-        keelButton.Visible = managedKeelVersion != null;
-        keelButton.Text = latestKeel != null && managedKeelVersion != null && latestKeel.Version > managedKeelVersion
-            ? $"Keel {latestKeel.Version} update available"
-            : "Check Keel update";
+        var installed = profileKeel?.Version;
+        var managed = profileKeel?.State == ProfileKeelState.Managed;
+        bool updateAvailable = managed && installed != null && latestKeel != null && latestKeel.Version > installed;
+        keelButton.Enabled = managed;
+        var label = profileKeel?.State switch
+        {
+            ProfileKeelState.Managed => $"Keel {installed}" + (updateAvailable ? $" · {latestKeel!.Version} available" : ""),
+            ProfileKeelState.External => $"Keel {installed} · manually managed",
+            ProfileKeelState.Unverified => installed == null ? "Keel · installation unverified" : $"Keel {installed} · unverified",
+            ProfileKeelState.UpdatePending => "Keel · resume with Prepare game",
+            ProfileKeelState.NotInstalled => "Keel · prepare game first",
+            _ => "Keel · select a profile"
+        };
+        keelVersionLabel.Text = managed || bundledKeel == null ? label : $"{label} (bundled {bundledKeel})";
     }
 
     private async Task NoticeKeelUpdateAsync()

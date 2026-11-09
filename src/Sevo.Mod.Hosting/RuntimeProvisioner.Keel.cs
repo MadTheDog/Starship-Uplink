@@ -4,22 +4,39 @@ using Sevo.Mod.Core;
 
 namespace Sevo.Mod.Hosting;
 
+public enum ProfileKeelState { NotInstalled, Managed, External, Unverified, UpdatePending }
+
+public sealed record ProfileKeelStatus(ProfileKeelState State, Version? Version = null);
+
 public sealed partial class RuntimeProvisioner
 {
     internal const string PendingKeelName = ".sevo-keel-update.json";
     private static readonly string[] KeelPaths = KeelUpdater.Files.Select(name => KeelUpdater.PluginDirectory + name).ToArray();
 
-    public static Version? GetManagedKeelVersion(string gameDirectory)
+    public static Version? GetManagedKeelVersion(string gameDirectory) =>
+        InspectKeel(gameDirectory) is { State: ProfileKeelState.Managed } status ? status.Version : null;
+
+    public static Version? GetBundledKeelVersion(string frameworkDirectory) =>
+        ReadKeelVersion(KeelUpdater.Files.Select(name => SafePath.Child(frameworkDirectory, name)).ToArray());
+
+    public static ProfileKeelStatus InspectKeel(string gameDirectory)
     {
         var game = Path.GetFullPath(gameDirectory);
-        // During recovery the files can represent two different versions.
-        if (File.Exists(SafePath.Child(game, PendingKeelName))) return null;
+        if (File.Exists(SafePath.Child(game, PendingKeelName))) return new(ProfileKeelState.UpdatePending);
         var manifest = ReadManifest(game, OwnerName);
+        var paths = KeelPaths.Select(path => SafePath.Child(game, path)).ToArray();
+        var present = paths.Select(File.Exists).ToArray();
+        if (manifest == null && present.All(exists => !exists))
+            return new(ProfileKeelState.NotInstalled);
+        if (!present.All(exists => exists)) return new(ProfileKeelState.Unverified);
+
+        var version = ReadKeelVersion(paths);
+        if (version == null) return new(ProfileKeelState.Unverified);
         var entries = manifest == null ? null : ManagedKeel(manifest);
-        if (entries == null) return null;
-        var paths = entries.Select(entry => SafePath.Child(game, entry.Path)).ToArray();
-        if (paths.Where((path, i) => !File.Exists(path) || HashFile(path) != entries[i].Sha256).Any()) return null;
-        return ReadKeelVersion(paths);
+        if (entries == null) return new(ProfileKeelState.External, version);
+        return paths.Where((path, i) => HashFile(path) != entries[i].Sha256).Any()
+            ? new(ProfileKeelState.Unverified, version)
+            : new(ProfileKeelState.Managed, version);
     }
 
     private static OwnedFile[]? ManagedKeel(RuntimeManifest manifest)
@@ -38,7 +55,7 @@ public sealed partial class RuntimeProvisioner
                 runtime.Version is not { Build: >= 0, Revision: 0 } version || version != sdk.Version) return null;
             return Version.Parse(version.ToString(3));
         }
-        catch (BadImageFormatException) { return null; }
+        catch (Exception ex) when (ex is BadImageFormatException or FileNotFoundException or DirectoryNotFoundException) { return null; }
     }
 
     internal void UpdateKeel(string gameDirectory, string stateDirectory, Version version, byte[][] payload)

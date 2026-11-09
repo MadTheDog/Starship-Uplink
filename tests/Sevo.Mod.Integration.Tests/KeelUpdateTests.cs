@@ -41,6 +41,8 @@ internal static class KeelUpdateTests
             using (oldZip)
                 foreach (var file in KeelUpdater.Files)
                     oldZip.GetEntry(KeelUpdater.PluginDirectory + file)!.ExtractToFile(Path.Combine(f.Framework, file), overwrite: true);
+            Check(RuntimeProvisioner.GetBundledKeelVersion(f.Framework) == new Version(0, 1, 0), "The bundled release was not identified.");
+            Check(RuntimeProvisioner.InspectKeel(f.Game).State == ProfileKeelState.NotInstalled, "An unprepared game was reported as installed.");
             provisioner.Prepare(f.Game, state, f.Zip, f.Framework);
             Check(RuntimeProvisioner.GetManagedKeelVersion(f.Game) == new Version(0, 1, 0), "The installed release was not identified.");
 
@@ -77,7 +79,8 @@ internal static class KeelUpdateTests
                     }
                     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
                     Check(File.Exists(Path.Combine(f.Game, RuntimeProvisioner.PendingKeelName)), "No recovery record was retained.");
-                    Check(RuntimeProvisioner.GetManagedKeelVersion(f.Game) == null, "A partial update was advertised as a complete version.");
+                    Check(RuntimeProvisioner.InspectKeel(f.Game) == new ProfileKeelStatus(ProfileKeelState.UpdatePending),
+                        "A partial update was advertised as a complete version.");
                 }
                 provisioner.ValidatePrepared(f.Game, state);
             }
@@ -93,6 +96,8 @@ internal static class KeelUpdateTests
             provisioner.Remove(f.Game, state);
             ZipFile.ExtractToDirectory(oldArchive, f.Game);
             provisioner.Prepare(f.Game, state, f.Zip, f.Framework);
+            Check(RuntimeProvisioner.InspectKeel(f.Game) == new ProfileKeelStatus(ProfileKeelState.External, new Version(0, 1, 0)),
+                "Manually installed Keel did not show its version and ownership.");
             Check(RuntimeProvisioner.GetManagedKeelVersion(f.Game) == null, "Manually installed Keel was advertised as managed.");
             try
             {

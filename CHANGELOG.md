@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.9
+
+- Gave Activity a separate heading and scrollable area so the log stays readable at the minimum window size.
+- Added a version box for Uplink and the selected profile's Keel runtime.
+- Kept **Update Uplink** and **Update Keel** visible as separate controls. The Keel status explains when a profile needs preparation or uses a manually managed installation.
+
 ## 0.1.8
 
 - Added **Check all for updates** and an **Update** column to Installed Mods. The check reads GitHub release metadata and leaves downloads and installation to **Review updates**.
