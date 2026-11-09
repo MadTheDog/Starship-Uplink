@@ -162,6 +162,7 @@ public sealed partial class MainForm : Form
                     x.PackageId,
                     x.Version,
                     State = x.Enabled ? "Enabled" : "Disabled",
+                    Update = UpdateStatus(profile.Id, x),
                     Pinned = x.Pinned ? "Yes" : "No",
                     Previous = x.PreviousVersion ?? "—"
                 }).ToList();

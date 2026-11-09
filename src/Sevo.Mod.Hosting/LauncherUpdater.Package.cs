@@ -39,9 +39,11 @@ public static partial class LauncherUpdater
         return (line[..64].ToLowerInvariant(), line[66..]);
     }
 
+    static readonly string[] BundledKeelPaths = KeelUpdater.Files.Select(file => "framework/" + file).ToArray();
+
     static bool IsDigest(string? hash) => hash is { Length: 64 } && hash.All(Uri.IsHexDigit);
 
-    static Dictionary<string, string> ReadInventory(string root, bool exactTree = false, string? expectedInventory = null)
+    static Dictionary<string, string> ReadInventory(string root, bool exactTree = false, string? expectedInventory = null, IReadOnlyDictionary<string, string>? oldKeel = null, bool inspectKeel = false)
     {
         string inventoryPath = Child(root, InventoryFile);
         byte[] inventoryBytes = ReadBytes(inventoryPath, MaximumInventoryBytes);
@@ -60,12 +62,16 @@ public static partial class LauncherUpdater
         if (!RequiredFiles.All(inventory.ContainsKey))
             throw new PlatformException("The Uplink checksum inventory does not cover all launcher, CLI and Keel binaries.");
         long total = inventoryBytes.Length;
-        foreach (var (relative, hash) in inventory)
+        foreach (string relative in inventory.Keys.ToArray())
         {
             string path = Child(root, relative);
             total += RequireFile(path, MaximumPackageBytes);
             if (total > MaximumPackageBytes) throw new PlatformException("The Uplink package exceeds 64 MiB.");
-            if (HashFile(path) != hash) throw new PlatformException("A managed Uplink package file changed: " + relative);
+            string actual = HashFile(path);
+            if (inspectKeel && BundledKeelPaths.Contains(relative)) inventory[relative] = actual;
+            else if (actual != (oldKeel?.GetValueOrDefault(relative) ?? inventory[relative]))
+                throw new PlatformException("A managed Uplink package file changed: " + relative);
+            else inventory[relative] = actual;
         }
         inventory.Add(InventoryFile, inventoryHash);
 

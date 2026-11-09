@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.8
+
+- Added **Check all for updates** and an **Update** column to Installed Mods. The check reads GitHub release metadata and leaves downloads and installation to **Review updates**.
+- Uplink can upgrade in place when its bundled Keel DLLs were replaced with a verified official Keel release. The original files remain in the rollback backup.
+- **Update Uplink** now goes directly to the upgrade confirmation and restarts with the existing workspace.
+
 ## 0.1.7
 
 - Added a resizable sidebar workspace with separate pages for **Installed mods**, **Package library**, and **Modpacks**. Profile maintenance is grouped under **Game tools**.

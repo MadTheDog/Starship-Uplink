@@ -31,6 +31,17 @@ public static class KeelUpdater
             .Where(candidate => candidate.Version != null).OrderByDescending(candidate => candidate.Version).FirstOrDefault();
         var (release, version) = newest;
         if (version == null || version <= new Version(installed.Major, installed.Minor, Math.Max(installed.Build, 0))) return null;
+        return CreateOffer(release!, version);
+    }
+
+    internal static async Task<KeelUpdateOffer> GetExactAsync(HttpClient http, Version version, CancellationToken token)
+    {
+        var release = await new GitHubReleaseClient(http).GetByTagAsync(Repository, "v" + version.ToString(3), token).ConfigureAwait(false);
+        return CreateOffer(release, version);
+    }
+
+    private static KeelUpdateOffer CreateOffer(ReleaseInfo release, Version version)
+    {
         string tag = release.TagName;
         if (release.PageUrl != Releases + "tag/" + tag)
             throw new PlatformException("The Keel release URL does not match its version tag.");
@@ -59,27 +70,43 @@ public static class KeelUpdater
     public static async Task ApplyAsync(HttpClient http, KeelUpdateOffer offer, RuntimeProvisioner provisioner,
         string game, string state, string downloads, CancellationToken token = default)
     {
+        var payload = await DownloadPayloadAsync(http, offer, downloads, token).ConfigureAwait(false);
+        await Task.Run(() =>
+        {
+            token.ThrowIfCancellationRequested();
+            provisioner.UpdateKeel(game, state, offer.Version, payload);
+        }, token).ConfigureAwait(false);
+    }
+
+    internal static async Task<byte[][]> DownloadPayloadAsync(HttpClient http, KeelUpdateOffer offer, string downloads, CancellationToken token)
+    {
         var client = new GitHubReleaseClient(http);
         var archive = offer.Archive;
         if (offer.Checksum != null)
         {
             var checksum = await ReleaseDownloads.DownloadAsync(client, offer.Checksum, downloads, token).ConfigureAwait(false);
-            using var stream = File.OpenRead(checksum);
-            if (stream.Length > 1024) throw new PlatformException("The Keel checksum file exceeds its size limit.");
-            using var reader = new StreamReader(stream);
-            var line = (await reader.ReadToEndAsync(token).ConfigureAwait(false)).TrimEnd('\r', '\n');
-            if (line.Length < 67 || !line[..64].All(Uri.IsHexDigit) || line[64..] != "  " + archive.Name)
-                throw new PlatformException("The official checksum must name the Keel BepInEx ZIP.");
-            archive = new ReleaseAsset { Name = archive.Name, DownloadUrl = archive.DownloadUrl, Sha256 = line[..64] };
+            try
+            {
+                using var stream = File.OpenRead(checksum);
+                if (stream.Length > 1024) throw new PlatformException("The Keel checksum file exceeds its size limit.");
+                using var reader = new StreamReader(stream);
+                var line = (await reader.ReadToEndAsync(token).ConfigureAwait(false)).TrimEnd('\r', '\n');
+                if (line.Length < 67 || !line[..64].All(Uri.IsHexDigit) || line[64..] != "  " + archive.Name)
+                    throw new PlatformException("The official checksum must name the Keel BepInEx ZIP.");
+                archive = new ReleaseAsset { Name = archive.Name, DownloadUrl = archive.DownloadUrl, Sha256 = line[..64] };
+            }
+            finally { DeleteDownload(checksum); }
         }
         var path = await ReleaseDownloads.DownloadAsync(client, archive, downloads, token).ConfigureAwait(false);
-        // ZIP parsing and game mutation are synchronous. Keep them off the UI thread.
-        await Task.Run(() =>
-        {
-            var payload = ReadArchive(path, archive.Sha256!, offer.Version);
-            token.ThrowIfCancellationRequested();
-            provisioner.UpdateKeel(game, state, offer.Version, payload);
-        }, token).ConfigureAwait(false);
+        try { return await Task.Run(() => ReadArchive(path, archive.Sha256!, offer.Version), token).ConfigureAwait(false); }
+        finally { DeleteDownload(path); }
+    }
+
+    private static void DeleteDownload(string path)
+    {
+        SafePath.Check(path);
+        File.Delete(path);
+        Directory.Delete(Path.GetDirectoryName(path)!);
     }
 
     internal static byte[][] ReadArchive(string path, string digest, Version version)

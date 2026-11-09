@@ -114,6 +114,58 @@ internal static class LauncherUpdateTests
             }));
     }
 
+    public static void RegisterKeelOverride(List<(string Name, Action Run)> tests, string root, string officialKeelZip)
+    {
+        tests.Add(("Uplink upgrades a verified alternate Keel bundle and refuses unofficial edits", () =>
+        {
+            byte[] keelArchive = File.ReadAllBytes(officialKeelZip);
+            var version = Version.Parse(Path.GetFileName(officialKeelZip).Split('-')[2]);
+            var payload = KeelUpdater.ReadArchive(officialKeelZip, Digest(keelArchive), version);
+            var next = Package("new");
+            next.Remove(Sums);
+            for (int i = 0; i < KeelUpdater.Files.Length; i++)
+                next["framework/" + KeelUpdater.Files[i]] = payload[i];
+            next.Add(Sums, Bytes(string.Join('\n', next.Select(file => Digest(file.Value) + "  " + file.Key)) + "\n"));
+
+            foreach (bool unofficial in new[] { false, true })
+            {
+                var f = Fixture(root);
+                var paths = KeelUpdater.Files.Select(file => Path.Combine(f.App, "framework", file)).ToArray();
+                for (int i = 0; i < paths.Length; i++)
+                    File.WriteAllBytes(paths[i], unofficial && i == 0 ? [..payload[i], 42] : payload[i]);
+                var oldInventory = File.ReadAllBytes(Path.Combine(f.App, Sums));
+                using var http = new HttpClient(new ReleaseHandler(Archive(next), keelZip: keelArchive, keelVersion: version));
+                var offer = LauncherUpdater.CheckAsync(http, new Version(0, 1, 7)).GetAwaiter().GetResult()!;
+                string StageOverride() => LauncherUpdater.StageAsync(http, offer, f.App, f.Workspace).GetAwaiter().GetResult().ArgumentList[1];
+
+                if (unofficial)
+                {
+                    Refuses(() => StageOverride());
+                    Check(File.ReadAllBytes(Path.Combine(f.App, Sums)).SequenceEqual(oldInventory), "Unofficial DLL changed the inventory.");
+                    Check(File.ReadAllText(Path.Combine(f.App, Core)) == "old " + Core, "Unofficial DLL allowed replacement.");
+                    continue;
+                }
+                var plan = StageOverride();
+                Check(LauncherUpdater.GetRecoveryStartInfo(f.App) != null, "Override plan cannot be resumed.");
+                if (OperatingSystem.IsWindows())
+                {
+                    LauncherUpdater.UpdateResult failed;
+                    using (File.Open(Path.Combine(f.App, Exe), FileMode.Open, FileAccess.Read, FileShare.Read))
+                        failed = LauncherUpdater.Apply(plan);
+                    Check(failed.Failure != null && File.ReadAllBytes(Path.Combine(f.App, Sums)).SequenceEqual(oldInventory),
+                        "Rollback did not restore the original launcher inventory.");
+                    Check(paths.Select(File.ReadAllBytes).Zip(payload).All(pair => pair.First.SequenceEqual(pair.Second)),
+                        "Rollback changed the user's Keel pair.");
+                    plan = StageOverride();
+                }
+                var result = LauncherUpdater.Apply(plan);
+                Check(result.Failure == null && File.ReadAllText(Path.Combine(f.App, Core)) == "new " + Core,
+                    "Upgrade with official override failed.");
+                Check(result.Restart.ArgumentList[1] == f.Workspace, "The upgrade lost the workspace.");
+            }
+        }));
+    }
+
     static string Stage(string app, string workspace, byte[] archive, bool useSidecar = false, bool badDigest = false)
     {
         using var http = new HttpClient(new ReleaseHandler(archive, useSidecar, badDigest: badDigest));
@@ -184,7 +236,7 @@ internal static class LauncherUpdateTests
         throw new Exception("Expected the updater to refuse the operation.");
     }
 
-    sealed class ReleaseHandler(byte[] archive, bool useSidecar = false, bool provideSha = true, bool badDigest = false) : HttpMessageHandler
+    sealed class ReleaseHandler(byte[] archive, bool useSidecar = false, bool provideSha = true, bool badDigest = false, byte[]? keelZip = null, Version? keelVersion = null) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -205,6 +257,19 @@ internal static class LauncherUpdateTests
             }
             else if (url == Assets + zip) content = new ByteArrayContent(archive);
             else if (url == Assets + sidecar && provideSha && useSidecar) content = new StringContent(digest + "  " + zip + "\n");
+            else if (keelZip != null && url == $"https://api.github.com/repos/MadTheDog/Starship-Keel/releases/tags/v{keelVersion}")
+            {
+                var tag = "v" + keelVersion;
+                var name = $"Starship-Keel-{keelVersion}-BepInEx.zip";
+                content = new StringContent(JsonSerializer.Serialize(new
+                {
+                    tag_name = tag, html_url = $"https://github.com/MadTheDog/Starship-Keel/releases/tag/{tag}",
+                    draft = false, prerelease = false,
+                    assets = new[] { new { name, browser_download_url = $"https://github.com/MadTheDog/Starship-Keel/releases/download/{tag}/{name}", digest = "sha256:" + Digest(keelZip) } }
+                }));
+            }
+            else if (keelZip != null && url == $"https://github.com/MadTheDog/Starship-Keel/releases/download/v{keelVersion}/Starship-Keel-{keelVersion}-BepInEx.zip")
+                content = new ByteArrayContent(keelZip);
             else throw new InvalidOperationException("Unexpected GitHub request: " + url);
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { RequestMessage = request, Content = content });
         }

@@ -23,7 +23,7 @@ public static partial class LauncherUpdater
     const string RolledBack = "rolled-back";
 
     sealed record UpdatePlan(string Transaction, string Workspace, int ParentId, long ParentStartUtcTicks,
-        string OldInventory, string NewInventory);
+        string OldInventory, string NewInventory, Dictionary<string, string>? OldKeel = null);
     internal sealed record UpdateResult(ProcessStartInfo Restart, PlatformException? Failure);
     enum LiveState { Before, Between, After }
 
@@ -69,7 +69,9 @@ public static partial class LauncherUpdater
         if (plan is null || !Guid.TryParseExact(plan.Transaction, "N", out var transaction) || transaction.ToString("N") != plan.Transaction ||
             plan.Workspace is null || NormalizeAbsolute(plan.Workspace) != plan.Workspace || plan.ParentId <= 0 ||
             plan.ParentStartUtcTicks <= 0 || plan.ParentStartUtcTicks > DateTime.MaxValue.Ticks ||
-            !IsDigest(plan.OldInventory) || !IsDigest(plan.NewInventory))
+            !IsDigest(plan.OldInventory) || !IsDigest(plan.NewInventory) ||
+            plan.OldKeel is { } keel && (keel.Count != BundledKeelPaths.Length ||
+                BundledKeelPaths.Any(path => !IsDigest(keel.GetValueOrDefault(path)))))
             throw new PlatformException("The pending Uplink update plan is incomplete or unsafe.");
         return plan;
     }
@@ -94,7 +96,7 @@ public static partial class LauncherUpdater
         Dictionary<string, string> oldFiles, newFiles;
         try
         {
-            oldFiles = ReadInventory(backup, exactTree: true, plan.OldInventory);
+            oldFiles = ReadInventory(backup, exactTree: true, plan.OldInventory, oldKeel: plan.OldKeel);
             newFiles = ReadInventory(replacement, exactTree: true, plan.NewInventory);
             if (phase is null) ValidateLive(appRoot, oldFiles, newFiles, LiveState.Before);
         }

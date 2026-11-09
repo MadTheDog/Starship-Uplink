@@ -62,7 +62,15 @@ public static partial class LauncherUpdater
     {
         appRoot = NormalizeAbsolute(appRoot);
         workspace = NormalizeAbsolute(workspace);
-        var current = ReadInventory(appRoot);
+        Dictionary<string, string> current;
+        Dictionary<string, string>? oldKeel = null;
+        try { current = ReadInventory(appRoot); }
+        catch (PlatformException)
+        {
+            // Only the two bundled Keel files may differ. Verify that pair against its published release.
+            current = ReadInventory(appRoot, inspectKeel: true);
+            oldKeel = BundledKeelPaths.ToDictionary(path => path, path => current[path], StringComparer.Ordinal);
+        }
         string updateRoot = OpenUpdateRoot(appRoot, create: true)!;
         string planPath = Child(updateRoot, PlanFile);
         if (Attributes(planPath) is not null)
@@ -72,6 +80,8 @@ public static partial class LauncherUpdater
         if (Attributes(transactionRoot) is not null) throw new PlatformException("The Uplink update staging path already exists.");
         Directory.CreateDirectory(transactionRoot);
 
+        Version? overriddenKeel = oldKeel == null ? null :
+            await VerifyBundledKeelAsync(http, appRoot, transactionRoot, oldKeel, cancellationToken).ConfigureAwait(false);
         string replacement = Child(transactionRoot, ReplacementDirectory);
         var client = new GitHubReleaseClient(http);
         var archive = offer.Archive;
@@ -88,6 +98,8 @@ public static partial class LauncherUpdater
         try { ExtractArchive(archivePath, archive.Name[..^4], replacement, archive.Sha256!, cancellationToken); }
         finally { DeleteDownload(archivePath); }
         var next = ReadInventory(replacement, exactTree: true);
+        if (overriddenKeel != null && ReadBundledKeelVersion(replacement) < overriddenKeel)
+            throw new PlatformException($"This Uplink release bundles an older Keel than {overriddenKeel}. The installation was preserved.");
         ValidateLive(appRoot, current, next, LiveState.Before);
 
         string backup = Child(transactionRoot, BackupDirectory);
@@ -96,12 +108,12 @@ public static partial class LauncherUpdater
             cancellationToken.ThrowIfCancellationRequested();
             CopyDurable(Child(appRoot, relative), Child(backup, relative));
         }
-        ReadInventory(backup, exactTree: true, current[InventoryFile]);
+        ReadInventory(backup, exactTree: true, current[InventoryFile], oldKeel: oldKeel);
         ValidateLive(appRoot, current, next, LiveState.Before);
 
         using var parent = Process.GetCurrentProcess();
         var plan = new UpdatePlan(transaction, workspace, parent.Id, parent.StartTime.ToUniversalTime().Ticks,
-            current[InventoryFile], next[InventoryFile]);
+            current[InventoryFile], next[InventoryFile], oldKeel);
         WriteDurable(Child(transactionRoot, RecoveryScript),
             "@echo off\r\n\"%~dp0backup\\Starship Uplink.exe\" --apply-launcher-update \"%~dp0..\\pending.json\"\r\n");
         cancellationToken.ThrowIfCancellationRequested();
@@ -158,7 +170,7 @@ public static partial class LauncherUpdater
         if (Attributes(planPath) is null) return null;
         var plan = LoadPlan(planPath);
         string backup = Child(updateRoot, plan.Transaction + "/" + BackupDirectory);
-        ReadInventory(backup, exactTree: true, plan.OldInventory);
+        ReadInventory(backup, exactTree: true, plan.OldInventory, oldKeel: plan.OldKeel);
         return HelperStartInfo(backup, planPath);
     }
 

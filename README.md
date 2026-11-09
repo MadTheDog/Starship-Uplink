@@ -16,13 +16,17 @@ Profiles select plugins. Save isolation requires a separate Unity data path. Kee
 
 Select a version in **Package library** and choose **Remove from library** to delete its cached ZIP and payload. Uplink protects versions installed in any profile, including disabled mods, and versions reserved for rollback.
 
+In **Installed mods**, **Check all for updates** reads GitHub release metadata for every mod in the selected profile and fills the **Update** column. It does not download or install ZIPs. **Review release** means the release tag or asset choice needs review before Uplink can tell which package version is newer.
+
 In **Installed mods**, tick one or more rows to enable, disable, pin, unpin, roll back, or remove them. **Review updates** checks the selected mods and shows the eligible updates and skipped entries. Applying the updates keeps each mod's enabled state, clears its rollback slot, and prunes older cached versions that no profile uses. Switching versions with **Install selected** still records a local rollback.
 
 In **Modpacks**, choose **Export profile** to share the installed versions and enabled states as a JSON file. Uplink matches each cached ZIP against its published GitHub release, so a pack can include mods from different repositories. A package with no matching published asset and SHA-256 cannot be exported. Choose **Import modpack** to review and merge a pack into the selected profile. Uplink verifies the exact ZIPs and validates the full profile before deploying it. Other mods in the profile are kept, and downloaded packages can remain in the library if deployment is refused.
 
 ## Update or clean up
 
-**Update Uplink** checks the stable GitHub release. If a newer version is available, you can install it in place and keep your profiles, or clean a selected game folder. Uplink verifies the downloaded ZIP, backs up the old launcher files, and restarts with the same workspace. The updater uses the release ZIP layout and a writable launcher directory.
+**Update Uplink** checks the stable GitHub release. If a newer version is available, confirm the in-place upgrade. Uplink verifies the downloaded ZIP, backs up the old launcher files, and restarts with your existing workspace. The updater uses the release ZIP layout and a writable launcher directory. If the bundled Keel runtime and SDK were replaced, the updater verifies both against their exact official Keel release and keeps them in the rollback backup. The incoming Uplink package must include that Keel version or a newer one.
+
+If an older Uplink refuses to update because its bundled Keel files changed, extract the new Uplink ZIP into a separate folder and start its executable with `--workspace "absolute path to your existing Uplink data folder"`. Keep that workspace in place. The older executable performs its own checks before it can install this fix.
 
 **Game tools → Clean game** is also available directly, including when the old workspace was lost. Close the selected game and review the confirmation before continuing. Uplink releases the profile's game claim and archives its deployment and owned runtime files under `BepInEx/SevoCleanupBackups`, outside the plugin scan path. The package library, saves, configuration, and manually installed files are preserved. For a game still claimed by an accessible workspace, open that workspace to clean it.
 

@@ -44,16 +44,10 @@ public sealed partial class MainForm
             return;
         }
 
-        const string install = "Update Uplink and keep profiles";
-        const string clean = "Clean a game folder";
         status.Text = $"Uplink {update.Version} is available";
-        var choice = Prompts.Choose(this, status.Text, [install, clean]);
-        if (choice == clean)
-        {
-            await CleanGameAsync();
-            return;
-        }
-        if (choice != install) return;
+        if (MessageBox.Show(this, $"Install Uplink {update.Version} and restart with your current workspace?",
+            "Update Uplink", MessageBoxButtons.OKCancel, MessageBoxIcon.Question,
+            MessageBoxDefaultButton.Button2) != DialogResult.OK) return;
 
         var installation = Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
         if (!installation.Equals(Path.TrimEndingDirectorySeparator(appRoot), StringComparison.OrdinalIgnoreCase))

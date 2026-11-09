@@ -285,10 +285,14 @@ tests.Add(("modpack round trips exact releases across repositories and applies t
     var fixture = Fixture("modpack");
     ModpackTests.Verify(fixture.Game, Path.GetDirectoryName(fixture.Game)!);
 }));
+tests.Add(("mod update discovery checks each repo once and never downloads ZIPs", ModUpdateDiscoveryTests.Verify));
 LauncherUpdateTests.Register(tests, root);
 KeelUpdateTests.Register(tests);
 if (args is ["--keel-release-fixtures", var oldKeel, var newKeel, var keelChecksum])
+{
     KeelUpdateTests.RegisterArtifacts(tests, oldKeel, newKeel, keelChecksum, Fixture);
+    LauncherUpdateTests.RegisterKeelOverride(tests, root, newKeel);
+}
 GameCleanupTests.Add(tests, root);
 foreach(var test in tests) { try {test.Run();Console.WriteLine("PASS "+test.Name);passed++;}catch(Exception ex){Console.Error.WriteLine("FAIL "+test.Name+": "+ex.Message);} }
 Console.WriteLine($"{passed}/{tests.Count} hosting tests passed"); return passed==tests.Count?0:1;

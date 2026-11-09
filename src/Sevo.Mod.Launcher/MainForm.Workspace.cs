@@ -39,7 +39,7 @@ public sealed partial class MainForm
         {
             WorkspacePage("Installed mods", installed, installedActions,
                 Button("Enable", () => ChangeEnabledAsync(true)), Button("Disable", () => ChangeEnabledAsync(false)),
-                Button("Review updates", UpdateAsync), Button("Pin", () => ChangePinnedAsync(true)),
+                Button("Check all for updates", CheckAllUpdatesAsync), Button("Review updates", UpdateAsync), Button("Pin", () => ChangePinnedAsync(true)),
                 Button("Unpin", () => ChangePinnedAsync(false)), Button("Roll back", RollbackAsync),
                 Button("Remove selected", RemoveAsync)),
             WorkspacePage("Package library", library, libraryActions, Button("Import ZIP", ImportAsync),
