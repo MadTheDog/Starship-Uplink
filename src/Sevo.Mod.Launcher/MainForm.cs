@@ -54,7 +54,8 @@ public sealed partial class MainForm : Form
         profileBar.Controls.Add(new Label { Text = "Profile", AutoSize = true, Margin = new Padding(0, 8, 12, 0) }); profileBar.Controls.Add(profiles);
         profileBar.Controls.Add(Button("New profile", NewProfileAsync));
         profileBar.Controls.Add(Button("Prepare game", PrepareAsync));
-        profileBar.Controls.Add(Button("Play", PlayAsync));
+        profileBar.Controls.Add(Button("Play modded", PlayAsync));
+        profileBar.Controls.Add(Button("Play vanilla", PlayVanillaAsync));
         profileBar.Controls.Add(BuildGameTools());
         layout.Controls.Add(commands, 0, 0);
         layout.Controls.Add(BuildVersionBox(), 0, 1);

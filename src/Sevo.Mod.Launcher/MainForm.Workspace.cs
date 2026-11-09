@@ -41,7 +41,7 @@ public sealed partial class MainForm
                 Button("Enable", () => ChangeEnabledAsync(true)), Button("Disable", () => ChangeEnabledAsync(false)),
                 Button("Check all for updates", CheckAllUpdatesAsync), Button("Review updates", UpdateAsync), Button("Pin", () => ChangePinnedAsync(true)),
                 Button("Unpin", () => ChangePinnedAsync(false)), Button("Roll back", RollbackAsync),
-                Button("Remove selected", RemoveAsync)),
+                Button("Remove selected", RemoveAsync), Button("Remove all from profile", RemoveAllModsAsync)),
             WorkspacePage("Package library", library, libraryActions, Button("Import ZIP", ImportAsync),
                 Button("Add from GitHub", AddGitHubAsync), Button("Install selected", InstallAsync),
                 Button("Remove from library", RemoveFromLibraryAsync)),

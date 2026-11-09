@@ -93,6 +93,18 @@ public sealed partial class MainForm
         Write("Removed the owned runtime. Configuration, packages and saves were preserved.");
     }
     private Task OpenGameAsync() { Process.Start(new ProcessStartInfo(Profile().GameDirectory) { UseShellExecute = true }); return Task.CompletedTask; }
+
+    private Task PlayVanillaAsync()
+    {
+        var profile = Profile();
+        using var gate = RuntimeProvisioner.LockGame(profile.GameDirectory);
+        RuntimeProvisioner.AssertNotRunning(profile.GameDirectory);
+        var ticket = GameLaunch.CreateVanilla(profile.GameDirectory, State(profile));
+        using var process = Process.Start(ticket.StartInfo) ?? throw new InvalidOperationException("Game process did not start.");
+        Write($"Vanilla game process {process.Id} started with Doorstop disabled for this launch. The game uses its usual saves and settings.");
+        return Task.CompletedTask;
+    }
+
     private async Task PlayAsync()
     {
         var profile = Profile();

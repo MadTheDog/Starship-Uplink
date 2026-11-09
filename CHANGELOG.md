@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- Added **Play vanilla** to bypass Doorstop and BepInEx mods for one launch while keeping the selected profile and using the game's usual saves and settings.
+- Added **Remove all from profile** under Installed Mods. It lists the mods for confirmation before removing enabled and disabled entries from the selected profile.
+
 ## 0.2.0
 
 - **Prepare game** checks the latest stable BepInEx 5.4 Windows x64 release for a fresh install and verifies its official ZIP.

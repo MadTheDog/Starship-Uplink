@@ -44,6 +44,26 @@ Test("batch install and disable validate the resulting dependency set together",
     Check(service.GetProfile(profile.Id).Mods.All(mod => !mod.Enabled) && !File.Exists(ModPath(profile, "consumer")));
 });
 
+Test("removing every mod clears only the selected profile", r =>
+{
+    var service = new PlatformService(r, new FakeProcesses());
+    foreach (var id in new[] { "enabled", "disabled" })
+        service.ImportPackage(Zip(r, id));
+    var profile = service.CreateProfile("Clear", Game(r));
+    var other = service.CreateProfile("Keep", Game(Path.Combine(r, "other")));
+    service.InstallBatch(profile.Id, [new("enabled", "1.0.0"), new("disabled", "1.0.0")]);
+    var before = service.SetEnabled(profile.Id, "disabled", false);
+    service.Install(other.Id, "enabled", "1.0.0");
+    var external = Path.Combine(profile.GameDirectory, "BepInEx", "plugins", "External.dll");
+    File.WriteAllText(external, "external fixture");
+
+    service.RemoveBatch(profile.Id, before.Mods.Select(mod => mod.PackageId).ToArray());
+
+    Check(service.GetProfile(profile.Id).Mods.Count == 0 && !File.Exists(ModPath(profile, "enabled")));
+    Check(service.GetProfile(other.Id).Mods.Count == 1 && File.Exists(ModPath(other, "enabled")));
+    Check(service.ListPackages().Count == 2 && File.ReadAllText(external) == "external fixture");
+});
+
 Test("batch updates switch related versions in one transaction and keep disabled mods disabled", r =>
 {
     var service = new PlatformService(r, new FakeProcesses());

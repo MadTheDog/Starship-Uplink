@@ -181,6 +181,19 @@ tests.Add(("launch ticket scopes state and distinguishes sessions",()=>{
     Check(a.StartInfo.FileName==Path.Combine(f.Game,"Starship EVO.exe"),"wrong executable");
     Check(!a.StartInfo.UseShellExecute,"environment cannot be scoped through shell launch");
 }));
+tests.Add(("vanilla launch disables Doorstop for its own process",()=>{
+    var f = Fixture("vanilla-ticket");
+    var vanilla = GameLaunch.CreateVanilla(f.Game, f.State);
+    var modded = GameLaunch.Create(f.Game, f.State);
+    Check(vanilla.StartInfo.Environment["DOORSTOP_DISABLE"] == "TRUE", "Doorstop disable switch missing");
+    Check(vanilla.StartInfo.ArgumentList.Take(2).SequenceEqual(new[] { "--doorstop-enabled", "false" }), "Doorstop command-line override missing");
+    Check(!vanilla.StartInfo.Environment.ContainsKey("SEVO_PLATFORM_SESSION") &&
+        !vanilla.StartInfo.Environment.ContainsKey("SEVO_PLATFORM_STATE_DIR"), "vanilla launch passed Keel session state");
+    modded.StartInfo.Environment.TryGetValue("DOORSTOP_DISABLE", out var inheritedSwitch);
+    Check(!modded.StartInfo.ArgumentList.Contains("--doorstop-enabled") &&
+        inheritedSwitch == Environment.GetEnvironmentVariable("DOORSTOP_DISABLE"),
+        "vanilla override leaked into modded launch");
+}));
 tests.Add(("runtime status rejects stale nonce or process identity",()=>{
     var f=Fixture("status");Directory.CreateDirectory(f.State);
     File.WriteAllText(Path.Combine(f.State,"runtime-status.json"),"{\"schemaVersion\":1,\"session\":\"fresh\",\"processId\":123,\"resourcesReady\":true}");

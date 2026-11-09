@@ -6,7 +6,13 @@ namespace Sevo.Mod.Hosting;
 public sealed record LaunchTicket(ProcessStartInfo StartInfo, string Session);
 public static class GameLaunch
 {
-    public static LaunchTicket Create(string gameDirectory, string stateDirectory)
+    public static LaunchTicket Create(string gameDirectory, string stateDirectory) =>
+        Create(gameDirectory, stateDirectory, vanilla: false);
+
+    public static LaunchTicket CreateVanilla(string gameDirectory, string stateDirectory) =>
+        Create(gameDirectory, stateDirectory, vanilla: true);
+
+    private static LaunchTicket Create(string gameDirectory, string stateDirectory, bool vanilla)
     {
         var game = Path.GetFullPath(gameDirectory); var state = Path.GetFullPath(stateDirectory);
         SafePath.Check(game); SafePath.Check(state); Directory.CreateDirectory(state);
@@ -14,8 +20,19 @@ public static class GameLaunch
         if (!File.Exists(executable)) throw new InvalidOperationException("Starship EVO executable is missing.");
         var session = Guid.NewGuid().ToString("N");
         var start = new ProcessStartInfo(executable) { WorkingDirectory = game, UseShellExecute = false };
-        start.Environment["SEVO_PLATFORM_STATE_DIR"] = state;
-        start.Environment["SEVO_PLATFORM_SESSION"] = session;
+        if (vanilla)
+        {
+            start.Environment.Remove("SEVO_PLATFORM_STATE_DIR");
+            start.Environment.Remove("SEVO_PLATFORM_SESSION");
+            start.Environment["DOORSTOP_DISABLE"] = "TRUE";
+            start.ArgumentList.Add("--doorstop-enabled");
+            start.ArgumentList.Add("false");
+        }
+        else
+        {
+            start.Environment["SEVO_PLATFORM_STATE_DIR"] = state;
+            start.Environment["SEVO_PLATFORM_SESSION"] = session;
+        }
         start.ArgumentList.Add("-logFile"); start.ArgumentList.Add(SafePath.Child(state, "game-" + session + ".log"));
         return new(start, session);
     }

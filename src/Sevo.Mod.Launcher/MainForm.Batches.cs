@@ -40,6 +40,22 @@ public sealed partial class MainForm
         Write($"Removed {ids.Length} selected mod(s). Cached packages and configuration were preserved.");
     }
 
+    private async Task RemoveAllModsAsync()
+    {
+        var profile = Profile();
+        var ids = profile.Mods.Select(mod => mod.PackageId).ToArray();
+        if (ids.Length == 0)
+        {
+            Write($"There are no mods to remove from {profile.Name}.");
+            return;
+        }
+
+        if (!Prompts.Review(this, "Remove all mods from profile", $"Remove all {ids.Length} mods from {profile.Name}?",
+            ids, "Remove all from profile")) return;
+        await Task.Run(() => service.RemoveBatch(profile.Id, ids));
+        Write($"Removed {ids.Length} mod(s) from {profile.Name}. Cached packages and configuration were preserved.");
+    }
+
     private async Task RollbackAsync()
     {
         var profile = Profile();
