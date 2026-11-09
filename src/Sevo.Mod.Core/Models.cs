@@ -9,6 +9,8 @@ public sealed class PlatformException : Exception
 }
 public sealed class PackageImportOptions
 {
+    internal string? ExpectedId { get; set; }
+    internal string? ExpectedVersion { get; set; }
     public string? Id { get; set; }
     public string? Name { get; set; }
     public string? Version { get; set; }
@@ -17,6 +19,7 @@ public sealed class PackageImportOptions
 }
 public sealed class PackageRecord
 {
+    public bool IsNewerThan(PackageRecord other) => PackageVersion.Parse(Version).CompareTo(PackageVersion.Parse(other.Version)) > 0;
     [JsonRequired] public string Id { get; set; } = "";
     [JsonRequired] public string Name { get; set; } = "";
     [JsonRequired] public string Version { get; set; } = "";

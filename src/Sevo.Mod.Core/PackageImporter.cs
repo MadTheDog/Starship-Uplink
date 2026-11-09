@@ -55,6 +55,9 @@ internal static class PackageImporter
             m=new Manifest { SchemaVersion=1, Id=options?.Id??recognized[0].Item2,Name=options?.Name??recognized[0].Item1,Version=options?.Version??versions[0],PayloadRoot="BepInEx/plugins/"+recognized[0].Item1,Repository=options?.Repository,AssetName=options?.AssetName??Path.GetFileName(archivePath) };
         }
         SafeFiles.Id(m.Id); PackageVersion.Parse(m.Version);
+        if ((options?.ExpectedId is { } expectedId && m.Id != expectedId) ||
+            (options?.ExpectedVersion is { } expectedVersion && m.Version != expectedVersion))
+            throw new PlatformException($"The selected ZIP contains {m.Id} {m.Version}, which does not match the requested mod.");
         if(string.IsNullOrWhiteSpace(m.Name)||m.Name.Length>200)throw new PlatformException("Package name is required and must be at most 200 characters.");
         if(m.Repository!=null) GitHubReleaseClient.ValidateRepository(m.Repository);
         if(m.AssetName!=null) { SafeFiles.Relative(m.AssetName); if(m.AssetName.Contains('/'))throw new PlatformException("Invalid asset filename."); }

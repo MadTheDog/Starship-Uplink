@@ -40,6 +40,25 @@ public sealed class GitHubReleaseClient
             return release;
         },cancellationToken);
 
+    internal static void ValidateTag(string tag)
+    {
+        if (string.IsNullOrEmpty(tag) || tag.Length > 200 ||
+            tag.Any(char.IsControl) || tag.Split('/').Any(part => part is "" or "." or ".."))
+            throw new PlatformException("Invalid GitHub release tag.");
+    }
+
+    internal Task<ReleaseInfo> GetByTagAsync(string repository, string tag, CancellationToken token = default)
+    {
+        ValidateTag(tag);
+        return ReadReleasesAsync(repository, "tags/" + Uri.EscapeDataString(tag), json =>
+        {
+            var release = ParseRelease(repository, json);
+            if (json.GetProperty("draft").GetBoolean() || release.TagName != tag)
+                throw new PlatformException("GitHub did not return the exact published release.");
+            return release;
+        }, token);
+    }
+
     // Keel publishes preview releases with ordinary vX.Y.Z tags. Other consumers keep the stable-only endpoint.
     internal async Task<IReadOnlyList<ReleaseInfo>> GetPublishedAsync(string repository,CancellationToken cancellationToken=default)
     {

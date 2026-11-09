@@ -27,33 +27,60 @@ public sealed partial class PlatformService
         RemoveCachedPackage(catalog, package);
     }
 
-    public GitHubUpdateResult UpdateFromGitHub(string profileId, string packageId, string expectedVersion, string version)
+    public GitHubUpdateResult UpdateFromGitHub(string profileId, string packageId, string expectedVersion, string version) =>
+        UpdateFromGitHubBatch(profileId, [new PackageUpdate(packageId, expectedVersion, version)], enableUpdatedMods: true);
+
+    public GitHubUpdateResult UpdateFromGitHubBatch(string profileId, IReadOnlyList<PackageUpdate> updates) =>
+        UpdateFromGitHubBatch(profileId, updates, enableUpdatedMods: false);
+
+    private GitHubUpdateResult UpdateFromGitHubBatch(string profileId, IReadOnlyList<PackageUpdate> updates, bool enableUpdatedMods)
     {
+        CheckSelection(updates.Select(update => update.Id));
         using var gate = Lock();
         Recover();
         var catalog = Catalog();
         var profiles = Profiles();
-        var mod = Mod(Find(profiles, profileId), packageId);
-        if (mod.Version != expectedVersion)
-            throw new PlatformException("The installed version changed while checking GitHub. Refresh the profile and try again.");
-        if (mod.Pinned)
-            throw new PlatformException("This mod is pinned. Unpin it before updating.");
-        var current = Package(catalog, mod);
-        var next = FindCachedPackage(catalog, packageId, version);
-        if (current.Repository is null || !string.Equals(current.Repository, next.Repository, StringComparison.OrdinalIgnoreCase))
-            throw new PlatformException("The selected update does not match the installed package's GitHub repository.");
-        var nextVersion = PackageVersion.Parse(next.Version);
-        if (nextVersion.CompareTo(PackageVersion.Parse(current.Version)) <= 0)
-            throw new PlatformException("The selected GitHub package is not newer than the installed version.");
+        var replacements = updates.Select(update =>
+        {
+            var mod = Mod(Find(profiles, profileId), update.Id);
+            if (mod.Version != update.InstalledVersion)
+                throw new PlatformException($"The installed version of {update.Id} changed. Refresh and try again.");
+            if (mod.Pinned) throw new PlatformException($"{update.Id} is pinned. Unpin it before updating.");
+            var current = Package(catalog, mod);
+            var next = FindCachedPackage(catalog, update.Id, update.NewVersion);
+            if (current.Repository == null || !string.Equals(current.Repository, next.Repository, StringComparison.OrdinalIgnoreCase))
+                throw new PlatformException($"The update for {current.Name} does not match its GitHub repository.");
+            if (PackageVersion.Parse(next.Version).CompareTo(PackageVersion.Parse(current.Version)) <= 0)
+                throw new PlatformException($"The GitHub package for {current.Name} is not newer.");
+            return (Current: current, Next: next);
+        }).ToArray();
 
         MutateLocked(profiles, catalog, profileId, (profile, _) =>
         {
-            var installed = Mod(profile, packageId);
-            installed.PreviousVersion = null;
-            installed.Version = next.Version;
-            installed.Enabled = true;
+            foreach (var (current, next) in replacements)
+            {
+                var installed = Mod(profile, current.Id);
+                installed.PreviousVersion = null;
+                installed.Version = next.Version;
+                if (enableUpdatedMods) installed.Enabled = true;
+            }
         });
 
+        var removed = new List<string>();
+        var warnings = new List<string>();
+        foreach (var (current, next) in replacements)
+        {
+            PruneUpdatedVersions(profiles, catalog, current, next, removed, warnings);
+            if (File.Exists(PackageRemovalPath)) break;
+        }
+        return new GitHubUpdateResult(removed, warnings);
+    }
+
+    private void PruneUpdatedVersions(Profiles profiles, Catalog catalog, PackageRecord current, PackageRecord next,
+        List<string> removed, List<string> warnings)
+    {
+        var packageId = current.Id;
+        var nextVersion = PackageVersion.Parse(next.Version);
         var protectedVersions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var installed in profiles.Items.SelectMany(profile => profile.Mods).Where(mod => mod.PackageId == packageId))
         {
@@ -64,8 +91,6 @@ public sealed partial class PlatformService
             string.Equals(package.Repository, current.Repository, StringComparison.OrdinalIgnoreCase) &&
             !protectedVersions.Contains(package.Version) &&
             PackageVersion.Parse(package.Version).CompareTo(nextVersion) < 0).ToArray();
-        var removed = new List<string>();
-        var warnings = new List<string>();
         foreach (var package in obsolete)
         {
             try
@@ -79,7 +104,6 @@ public sealed partial class PlatformService
                 if (File.Exists(PackageRemovalPath)) break;
             }
         }
-        return new GitHubUpdateResult(removed, warnings);
     }
 
     private static PackageRecord FindCachedPackage(Catalog catalog, string packageId, string version)

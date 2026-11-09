@@ -50,12 +50,14 @@ public sealed partial class MainForm
         var record = await ImportGitHubAssetAsync(client, asset, repository);
         Write($"Imported {record.Name} {record.Version} from {release.PageUrl}.");
     }
-    private Task<PackageRecord> ImportGitHubAssetAsync(GitHubReleaseClient client, ReleaseAsset asset, string repository) =>
-        ReleaseDownloads.ImportPackageAsync(client, asset, Path.Combine(dataRoot, "downloads"), service, repository);
+    private Task<PackageRecord> ImportGitHubAssetAsync(GitHubReleaseClient client, ReleaseAsset asset, string repository, string? expectedId = null) =>
+        ReleaseDownloads.ImportPackageAsync(client, asset, Path.Combine(dataRoot, "downloads"), service, repository, expectedId);
 
     private async Task RemoveFromLibraryAsync()
     {
-        var row = library.CurrentRow ?? throw new InvalidOperationException("Select a library package first.");
+        var rows = PickedRows(library).ToArray();
+        if (rows.Length != 1) throw new InvalidOperationException("Tick one package version to remove from the library.");
+        var row = rows[0];
         var id = (string)row.Cells["Id"].Value;
         var name = (string)row.Cells["Name"].Value;
         var version = (string)row.Cells["Version"].Value;
@@ -66,49 +68,6 @@ public sealed partial class MainForm
         Write($"Removed {name} {version} from the package library.");
     }
 
-    private async Task InstallAsync()
-    {
-        var profile = Profile(); var row = library.CurrentRow ?? throw new InvalidOperationException("Select a library package first.");
-        var id = (string)row.Cells["Id"].Value; var version = (string)row.Cells["Version"].Value;
-        await Task.Run(() => service.Install(profile.Id, id, version)); Write($"Installed {id} {version}. Restart the game to apply changes.");
-    }
-    private async Task ToggleAsync()
-    {
-        var profile = Profile(); var id = InstalledId(); var mod = profile.Mods.Single(x => x.PackageId == id);
-        await Task.Run(() => service.SetEnabled(profile.Id, id, !mod.Enabled)); Write($"{id}: {(mod.Enabled ? "disabled" : "enabled")} for next launch.");
-    }
-    private async Task PinAsync()
-    {
-        var profile = Profile(); var id = InstalledId(); var mod = profile.Mods.Single(x => x.PackageId == id);
-        await Task.Run(() => service.SetPinned(profile.Id, id, !mod.Pinned)); Write($"{id}: {(mod.Pinned ? "unpinned" : "pinned")}.");
-    }
-    private async Task RemoveAsync()
-    {
-        var profile = Profile(); var id = InstalledId(); await Task.Run(() => service.Remove(profile.Id, id)); Write($"Removed {id}; configuration and cached packages were preserved.");
-    }
-    private async Task RollbackAsync()
-    {
-        var profile = Profile(); var id = InstalledId(); await Task.Run(() => service.Rollback(profile.Id, id)); Write("Restored the previous package version for " + id + ". World changes are not reverted.");
-    }
-    private async Task UpdateAsync()
-    {
-        var profile = Profile(); var id = InstalledId(); var mod = profile.Mods.Single(x => x.PackageId == id);
-        if (mod.Pinned) throw new InvalidOperationException("This mod is pinned. Unpin it before updating.");
-        var package = service.ListPackages().Single(x => x.Id == id && x.Version == mod.Version);
-        if (package.Repository == null) throw new InvalidOperationException("No GitHub update source is recorded. Import this mod using Add from GitHub.");
-        var client = new GitHubReleaseClient(http); var release = await client.GetLatestAsync(package.Repository);
-        if (!CanUseControls) return;
-        if (release.TagName.TrimStart('v', 'V') == mod.Version) { Write(id + " is already on the latest published release."); return; }
-        var name = Prompts.Choose(this, $"Update to {release.TagName} and clear this mod's local rollback", release.Assets.Where(x => x.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)).Select(x => x.Name)); if (name == null) return;
-        var asset = release.Assets.Single(x => x.Name == name);
-        var updated = await ImportGitHubAssetAsync(client, asset, package.Repository);
-        if (updated.Id != id) throw new InvalidOperationException("The selected asset has a different mod identity. It was cached but not installed.");
-        var result = await Task.Run(() => service.UpdateFromGitHub(profile.Id, id, mod.Version, updated.Version));
-        Write($"Updated {updated.Name} to {updated.Version}.");
-        if (result.RemovedVersions.Count > 0)
-            Write($"Removed older versions from the package library: {string.Join(", ", result.RemovedVersions)}.");
-        foreach (var warning in result.CleanupWarnings) Write(warning);
-    }
     private async Task PrepareAsync()
     {
         var profile = Profile(); Write("Preparing the game runtime…");

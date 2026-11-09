@@ -123,16 +123,14 @@ public sealed partial class PlatformService
     public ProfileRecord Install(string profileId,string packageId,string? version=null) => Mutate(profileId,(p,c)=>
     {
         SafeFiles.Id(packageId); var package=c.Packages.Where(x=>x.Id==packageId&&(version==null||x.Version==version)).OrderByDescending(x=>PackageVersion.Parse(x.Version)).FirstOrDefault()??throw new PlatformException("Package/version not found. Import it before installing.");
-        var mod=p.Mods.SingleOrDefault(x=>x.PackageId==packageId);
-        if(mod==null)p.Mods.Add(new ProfileModRecord { PackageId=packageId,Version=package.Version,Enabled=true });
-        else { if(mod.Pinned&&mod.Version!=package.Version)throw new PlatformException("This mod is pinned. Unpin it explicitly before changing its version."); if(mod.Version!=package.Version) { mod.PreviousVersion=mod.Version; mod.Version=package.Version; } mod.Enabled=true; }
+        InstallSelection(p, package, enabled: true);
     });
     static ProfileModRecord Mod(ProfileRecord p,string id) => p.Mods.SingleOrDefault(x=>x.PackageId==id)??throw new PlatformException("This package is not installed in the profile.");
     public ProfileRecord SetEnabled(string profileId,string packageId,bool enabled) => Mutate(profileId,(p,c)=>Mod(p,packageId).Enabled=enabled);
     public ProfileRecord Remove(string profileId,string packageId) => Mutate(profileId,(p,c)=>p.Mods.Remove(Mod(p,packageId)));
     public ProfileRecord SetPinned(string profileId,string packageId,bool pinned) => Mutate(profileId,(p,c)=>Mod(p,packageId).Pinned=pinned);
     public ProfileRecord Rollback(string profileId,string packageId) => Mutate(profileId,(p,c)=>
-    { var m=Mod(p,packageId); if(m.Pinned)throw new PlatformException("Unpin the mod before rolling back."); if(m.PreviousVersion==null)throw new PlatformException("No previous version is recorded."); (m.Version,m.PreviousVersion)=(m.PreviousVersion,m.Version); });
+        RollbackSelection(Mod(p, packageId)));
     PackageRecord Package(Catalog c,ProfileModRecord m) => c.Packages.SingleOrDefault(x=>x.Id==m.PackageId&&x.Version==m.Version)??throw new PlatformException("Installed package version is missing from the catalog: "+m.PackageId);
     List<string> Validate(ProfileRecord p,Catalog c)
     {

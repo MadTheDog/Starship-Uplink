@@ -30,6 +30,42 @@ string ModPath(ProfileRecord p,string id="a") => Path.Combine(p.GameDirectory,"B
 
 Test("fresh catalog",r=>Check(new PlatformService(r).ListPackages().Count==0));
 
+Test("batch install and disable validate the resulting dependency set together", r =>
+{
+    var service = new PlatformService(r, new FakeProcesses());
+    service.ImportPackage(Zip(r, "consumer", deps: new() { ["provider"] = ">=1.0.0" }));
+    service.ImportPackage(Zip(r, "provider"));
+    var profile = service.CreateProfile("Batch", Game(r));
+    var installed = service.InstallBatch(profile.Id, [new("consumer", "1.0.0"), new("provider", "1.0.0")]);
+    Check(installed.Mods.All(mod => mod.Enabled) && File.Exists(ModPath(profile, "consumer")));
+    Reject(() => service.SetEnabledBatch(profile.Id, ["provider"], false));
+    Check(service.GetProfile(profile.Id).Generation == installed.Generation && File.Exists(ModPath(profile, "provider")));
+    service.SetEnabledBatch(profile.Id, ["provider", "consumer"], false);
+    Check(service.GetProfile(profile.Id).Mods.All(mod => !mod.Enabled) && !File.Exists(ModPath(profile, "consumer")));
+});
+
+Test("batch updates switch related versions in one transaction and keep disabled mods disabled", r =>
+{
+    var service = new PlatformService(r, new FakeProcesses());
+    foreach (var version in new[] { "1.0.0", "2.0.0" })
+    {
+        service.ImportPackage(Zip(r, "consumer", version, deps: new() { ["provider"] = version }),
+            new() { Repository = "Owner/Consumer" });
+        service.ImportPackage(Zip(r, "provider", version), new() { Repository = "Owner/Provider" });
+        service.ImportPackage(Zip(r, "optional", version), new() { Repository = "Owner/Optional" });
+    }
+    var profile = service.CreateProfile("Updates", Game(r));
+    service.InstallBatch(profile.Id, [new("consumer", "1.0.0"), new("provider", "1.0.0"), new("optional", "1.0.0")]);
+    var before = service.SetEnabled(profile.Id, "optional", false);
+    Reject(() => service.UpdateFromGitHubBatch(profile.Id, [new("provider", "1.0.0", "2.0.0")]));
+    Check(service.GetProfile(profile.Id).Generation == before.Generation);
+    service.UpdateFromGitHubBatch(profile.Id, [new("provider", "1.0.0", "2.0.0"),
+        new("consumer", "1.0.0", "2.0.0"), new("optional", "1.0.0", "2.0.0")]);
+    var after = service.GetProfile(profile.Id);
+    Check(after.Mods.All(mod => mod.Version == "2.0.0") && !after.Mods.Single(mod => mod.PackageId == "optional").Enabled);
+    Check(File.ReadAllText(ModPath(profile, "provider")) == "assembly-2.0.0" && !File.Exists(ModPath(profile, "optional")));
+});
+
 Test("library removal deletes only the selected cached version", r =>
 {
     var service = new PlatformService(r);

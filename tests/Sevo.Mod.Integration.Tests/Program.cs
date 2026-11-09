@@ -280,6 +280,11 @@ if(File.Exists(loaderArticle)) tests.Add(("verified upstream loader is cached wi
     var path=RuntimeDownloads.EnsureLoaderAsync(client,cache,loaderArticle).GetAwaiter().GetResult();
     Check(File.Exists(path),"verified loader was not cached");Check(RuntimeDownloads.EnsureLoaderAsync(client,cache).GetAwaiter().GetResult()==path,"offline cache was not reused");
 }));
+tests.Add(("modpack round trips exact releases across repositories and applies the profile together", () =>
+{
+    var fixture = Fixture("modpack");
+    ModpackTests.Verify(fixture.Game, Path.GetDirectoryName(fixture.Game)!);
+}));
 LauncherUpdateTests.Register(tests, root);
 KeelUpdateTests.Register(tests);
 if (args is ["--keel-release-fixtures", var oldKeel, var newKeel, var keelChecksum])

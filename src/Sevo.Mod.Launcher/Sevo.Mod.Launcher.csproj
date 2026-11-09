@@ -4,9 +4,11 @@
     <UseWindowsForms>true</UseWindowsForms><ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyName>Starship Uplink</AssemblyName>
     <Product>Starship Uplink</Product>
-    <Version>0.1.6</Version>
+    <ApplicationIcon>Assets/LandingPort.ico</ApplicationIcon>
+    <Version>0.1.7</Version>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Assets/LandingPort.ico" LogicalName="LandingPort.ico" />
     <ProjectReference Include="../Sevo.Mod.Core/Sevo.Mod.Core.csproj" />
     <ProjectReference Include="../Sevo.Mod.Hosting/Sevo.Mod.Hosting.csproj" />
   </ItemGroup>

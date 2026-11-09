@@ -12,7 +12,7 @@ public static class ReleaseDownloads
     }
 
     public static async Task<PackageRecord> ImportPackageAsync(GitHubReleaseClient client, ReleaseAsset asset,
-        string downloadsDirectory, PlatformService service, string repository)
+        string downloadsDirectory, PlatformService service, string repository, string? expectedId = null, string? expectedVersion = null)
     {
         var path = await DownloadAsync(client, asset, downloadsDirectory).ConfigureAwait(false);
         try
@@ -20,7 +20,9 @@ public static class ReleaseDownloads
             return await Task.Run(() => service.ImportPackage(path, new PackageImportOptions
             {
                 Repository = repository,
-                AssetName = asset.Name
+                AssetName = asset.Name,
+                ExpectedId = expectedId,
+                ExpectedVersion = expectedVersion
             })).ConfigureAwait(false);
         }
         finally
