@@ -74,7 +74,13 @@ public sealed partial class RuntimeProvisioner
                     throw new InvalidOperationException($"Existing runtime cannot be reused because this file is missing or differs from the verified distribution: {file.Path}");
                 continue;
             }
-            if (File.Exists(destination) && !(file.Preserve && ValidConfig(destination))) throw new InvalidOperationException($"Existing unmanaged runtime file would be overwritten: {file.Path}");
+            if (File.Exists(destination))
+            {
+                if (!file.Preserve)
+                    throw new InvalidOperationException($"Existing unmanaged runtime file would be overwritten: {file.Path}");
+                if (!ValidConfig(destination))
+                    throw new InvalidOperationException("Set HideManagerGameObject = true under [Chainloader] in BepInEx/config/BepInEx.cfg, then run Prepare game again.");
+            }
             if (Directory.Exists(destination)) throw new InvalidOperationException($"Runtime file path is a directory: {file.Path}");
         }
         WriteProfileMarker(game, state);

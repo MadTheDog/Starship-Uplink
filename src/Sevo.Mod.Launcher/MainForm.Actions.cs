@@ -71,13 +71,14 @@ public sealed partial class MainForm
     private async Task PrepareAsync()
     {
         var profile = Profile(); Write("Preparing the game runtime…");
-        var loader = await RuntimeDownloads.EnsureLoaderAsync(http, Path.Combine(dataRoot, "runtime-downloads"), Path.Combine(appRoot, "runtime", RuntimeDownloads.LoaderFileName));
+        var loader = await RuntimeDownloads.ResolveLoaderAsync(http, profile.GameDirectory,
+            Path.Combine(dataRoot, "runtime-downloads"), Path.Combine(appRoot, "runtime"));
         var framework = Path.Combine(appRoot, "framework");
         if (!Directory.Exists(framework)) throw new InvalidOperationException("Starship Keel is missing. Extract the complete Starship Uplink release, including its framework folder.");
-        var result = await Task.Run(() => new RuntimeProvisioner(dataRoot).Prepare(profile.GameDirectory, State(profile), loader, framework));
+        var result = await Task.Run(() => new RuntimeProvisioner(dataRoot).Prepare(profile.GameDirectory, State(profile), loader.ArchivePath, framework));
         Write(result.ReusedLoader
-            ? "Verified existing BepInEx. Starship Keel is prepared for the next launch."
-            : $"Runtime prepared ({result.FilesInstalled} files). Startup readiness will be checked after launching.");
+            ? $"Verified existing BepInEx {loader.Version}. Starship Keel is prepared for the next launch."
+            : $"Runtime prepared with BepInEx {loader.Version} ({result.FilesInstalled} files). Startup readiness will be checked after launching.");
     }
     private async Task ValidateAsync()
     {

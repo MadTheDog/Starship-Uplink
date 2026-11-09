@@ -286,6 +286,7 @@ tests.Add(("modpack round trips exact releases across repositories and applies t
     ModpackTests.Verify(fixture.Game, Path.GetDirectoryName(fixture.Game)!);
 }));
 tests.Add(("mod update discovery checks each repo once and never downloads ZIPs", ModUpdateDiscoveryTests.Verify));
+LoaderDiscoveryTests.Register(tests, root);
 LauncherUpdateTests.Register(tests, root);
 KeelUpdateTests.Register(tests);
 if (args is ["--keel-release-fixtures", var oldKeel, var newKeel, var keelChecksum])

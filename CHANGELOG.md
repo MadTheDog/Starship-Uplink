@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0
+
+- **Prepare game** checks the latest stable BepInEx 5.4 Windows x64 release for a fresh install and verifies its official ZIP.
+- Existing loader installations can be reused when their required files match their own verified release. Working 5.4.23.5 profiles keep their loader.
+- Preparation reports the required BepInEx configuration setting directly when an existing config needs attention.
+
 ## 0.1.9
 
 - Gave Activity a separate heading and scrollable area so the log stays readable at the minimum window size.
