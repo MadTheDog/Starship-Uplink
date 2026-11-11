@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3
+
+- Fixed factory reset failing during BepInEx reinstallation when the game folder already contains changelog.txt. New runtime installs skip the optional BepInEx changelog and preserve the existing file. Retry Factory reset to recover an interrupted v0.2.2 reset.
+
 ## 0.2.2
 
 - Added **Game tools → Reset to factory settings**. Removes all installed mods (including manual plugins), mod settings, BepInEx and loader dependencies, then installs a verified fresh runtime.

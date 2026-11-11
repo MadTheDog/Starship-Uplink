@@ -5,7 +5,7 @@
     <AssemblyName>Starship Uplink</AssemblyName>
     <Product>Starship Uplink</Product>
     <ApplicationIcon>Assets/LandingPort.ico</ApplicationIcon>
-    <Version>0.2.2</Version>
+    <Version>0.2.3</Version>
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="Assets/LandingPort.ico" LogicalName="LandingPort.ico" />

@@ -94,6 +94,22 @@ internal static class FactoryResetTests
             new FactoryResetter(workspace).Reset(profile.Id, f.Zip, f.Framework);
         }));
 
+        tests.Add(("factory reset preserves an existing root changelog and leaves runtime preparable", () =>
+        {
+            var f = fixture("factory-changelog");
+            var workspace = Path.Combine(root, "factory-changelog-store");
+            var profile = new PlatformService(workspace).CreateProfile("Reset", f.Game);
+            using (var archive = ZipFile.Open(f.Zip, ZipArchiveMode.Update))
+            using (var writer = new StreamWriter(archive.CreateEntry("changelog.txt").Open()))
+                writer.Write("BepInEx release notes");
+            Write(f.Game, "changelog.txt", "Existing installation changelog");
+
+            var reset = new FactoryResetter(workspace).Reset(profile.Id, f.Zip, f.Framework);
+            Require(File.ReadAllText(Path.Combine(f.Game, "changelog.txt")) == "Existing installation changelog",
+                "reset changed the existing changelog");
+            new RuntimeProvisioner(workspace).Prepare(f.Game, reset.StateDirectory, f.Zip, f.Framework);
+        }));
+
         tests.Add(("factory reset validates replacement before deletion", () =>
         {
             var f = fixture("factory-invalid"); var workspace = Path.Combine(root, "factory-invalid-store");

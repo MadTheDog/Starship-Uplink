@@ -36,6 +36,9 @@ public sealed partial class RuntimeProvisioner
         CheckNotRunning(game); Recover(game);
         var desired = ReadPayload(loaderZip, frameworkDirectory);
         var old = ReadManifest(game, OwnerName);
+        // Keep legacy ownership records valid. New provisions do not deploy the loader's root documentation.
+        if (old?.Files.Any(file => file.Path == "changelog.txt") != true)
+            desired.Remove("changelog.txt");
         if (old != null && ManagedKeel(old) is { } installedEntries)
         {
             // An independently updated profile must not be downgraded by the bundled payload.
