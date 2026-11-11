@@ -8,6 +8,8 @@ public sealed partial class PlatformService
 
     internal static void AssertNoGameCleanup(string game)
     {
+        if (SafeFiles.Attributes(SafeFiles.Under(game, FactoryResetJournal)).HasValue)
+            throw new PlatformException("Factory reset is incomplete. Retry Reset to factory settings before using this installation.");
         var journal = SafeFiles.Under(game, CleanupJournal);
         if (SafeFiles.Attributes(journal).HasValue)
             throw new PlatformException("Game cleanup is pending. Resume it with Clean game before changing this installation.");

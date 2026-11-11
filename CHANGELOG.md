@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2
+
+- Added **Game tools → Reset to factory settings**. Removes all installed mods (including manual plugins), mod settings, BepInEx and loader dependencies, then installs a verified fresh runtime.
+- Reset tolerates missing/modified mod files and invalid old runtime records, and can be retried after interruption. It remains reachable when normal deployment recovery fails.
+- Preserves base game files, saves, game settings, other profiles and the shared package library. Replacement downloads are verified before deletion.
+- Shows the Steam build for the selected installation. Modded launch and reset warn for unsupported or unverified builds. The supported baseline is 26w45A (Steam build 26451593).
+- Bundles Starship Keel 0.2.3.
+
 ## 0.2.1
 
 - Added **Play vanilla** to bypass Doorstop and BepInEx mods for one launch while keeping the selected profile and using the game's usual saves and settings.

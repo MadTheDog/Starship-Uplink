@@ -108,6 +108,9 @@ public sealed partial class MainForm
     private async Task PlayAsync()
     {
         var profile = Profile();
+        var warning = GameBuildWarning(profile.GameDirectory);
+        if (warning != null && MessageBox.Show(this, warning + "\n\nLaunch modded anyway?", "Game version",
+            MessageBoxButtons.OKCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.OK) return;
         LaunchTicket ticket;
         Process launched;
         using (RuntimeProvisioner.LockGame(profile.GameDirectory))

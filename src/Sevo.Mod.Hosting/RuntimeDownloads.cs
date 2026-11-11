@@ -13,15 +13,18 @@ public static class RuntimeDownloads
     public sealed record VerifiedLoader(Version Version, string ArchivePath);
 
     public static async Task<VerifiedLoader> ResolveLoaderAsync(HttpClient http, string gameDirectory, string cacheDirectory,
-        string bundledDirectory, CancellationToken token = default)
+        string bundledDirectory, CancellationToken token = default, bool ignoreInstalled = false)
     {
-        var core = SafePath.Child(gameDirectory, "BepInEx/core/BepInEx.dll");
         Version? installed = null;
-        if (File.Exists(core))
+        if (!ignoreInstalled)
         {
-            var info = FileVersionInfo.GetVersionInfo(core);
-            if (!Version.TryParse(info.FileVersion, out installed) || !Supported(installed))
-                throw new PlatformException("The installed BepInEx is not an identifiable Windows BepInEx 5.4 release. Preserve that setup and use a clean game copy.");
+            var core = SafePath.Child(gameDirectory, "BepInEx/core/BepInEx.dll");
+            if (File.Exists(core))
+            {
+                var info = FileVersionInfo.GetVersionInfo(core);
+                if (!Version.TryParse(info.FileVersion, out installed) || !Supported(installed))
+                    throw new PlatformException("The installed BepInEx is not an identifiable Windows BepInEx 5.4 release. Preserve that setup and use a clean game copy.");
+            }
         }
 
         // Keep the previously supported 5.4.23.5 profile usable with its verified offline cache.

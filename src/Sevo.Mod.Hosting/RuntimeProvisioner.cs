@@ -23,10 +23,17 @@ public sealed partial class RuntimeProvisioner
     public RuntimeProvisioner(string workspaceRoot, IGameProcessInspector? processes = null) { root = Path.GetFullPath(workspaceRoot); SafePath.Check(root); this.processes = processes ?? new GameProcessInspector(); }
 
     public RuntimePreparation Prepare(string gameDirectory, string stateDirectory, string loaderZip, string frameworkDirectory)
+        => Prepare(gameDirectory, stateDirectory, loaderZip, frameworkDirectory, factoryReset: false);
+
+    internal static void ValidateResetPayload(string loaderZip, string frameworkDirectory) => _ = ReadPayload(loaderZip, frameworkDirectory);
+
+    internal RuntimePreparation Prepare(string gameDirectory, string stateDirectory, string loaderZip, string frameworkDirectory, bool factoryReset)
     {
         var game = ValidateGame(gameDirectory); var state = ValidateState(stateDirectory);
         using var gameGuard = LockGame(game);
-        using var guard = Acquire(state); PlatformService.AssertNoGameCleanup(game); CheckNotRunning(game); Recover(game);
+        using var guard = Acquire(state);
+        if (!factoryReset) PlatformService.AssertNoGameCleanup(game);
+        CheckNotRunning(game); Recover(game);
         var desired = ReadPayload(loaderZip, frameworkDirectory);
         var old = ReadManifest(game, OwnerName);
         if (old != null && ManagedKeel(old) is { } installedEntries)
@@ -106,7 +113,9 @@ public sealed partial class RuntimeProvisioner
     {
         var game = ValidateGame(gameDirectory); var state = ValidateState(stateDirectory);
         using var gameGuard = LockGame(game);
-        using var guard = Acquire(state); PlatformService.AssertNoGameCleanup(game); CheckNotRunning(game); Recover(game);
+        using var guard = Acquire(state);
+        PlatformService.AssertNoGameCleanup(game);
+        CheckNotRunning(game); Recover(game);
         var manifest = ReadManifest(game, OwnerName) ?? throw new InvalidOperationException("No manager-owned runtime is installed.");
         Verify(game, manifest, true, checkExternal: false);
         foreach (var file in RemovableFiles(manifest)) File.Delete(SafePath.Child(game, file.Path));
@@ -115,10 +124,15 @@ public sealed partial class RuntimeProvisioner
     }
 
     public void ValidatePrepared(string gameDirectory, string stateDirectory)
+        => ValidatePrepared(gameDirectory, stateDirectory, factoryReset: false);
+
+    internal void ValidatePrepared(string gameDirectory, string stateDirectory, bool factoryReset)
     {
         var game = ValidateGame(gameDirectory); var state = ValidateState(stateDirectory);
         using var gameGuard = LockGame(game);
-        using var guard = Acquire(state); PlatformService.AssertNoGameCleanup(game); CheckNotRunning(game); Recover(game);
+        using var guard = Acquire(state);
+        if (!factoryReset) PlatformService.AssertNoGameCleanup(game);
+        CheckNotRunning(game); Recover(game);
         var manifest = ReadManifest(game, OwnerName) ?? throw new InvalidOperationException("Prepare the runtime before launching this profile.");
         Verify(game, manifest, false); WriteProfileMarker(game, state);
     }

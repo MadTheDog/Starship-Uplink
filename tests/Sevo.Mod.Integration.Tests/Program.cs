@@ -308,6 +308,7 @@ if (args is ["--keel-release-fixtures", var oldKeel, var newKeel, var keelChecks
     LauncherUpdateTests.RegisterKeelOverride(tests, root, newKeel);
 }
 GameCleanupTests.Add(tests, root);
+FactoryResetTests.Add(tests, root, Fixture);
 foreach(var test in tests) { try {test.Run();Console.WriteLine("PASS "+test.Name);passed++;}catch(Exception ex){Console.Error.WriteLine("FAIL "+test.Name+": "+ex.Message);} }
 Console.WriteLine($"{passed}/{tests.Count} hosting tests passed"); return passed==tests.Count?0:1;
 

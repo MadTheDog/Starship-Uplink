@@ -10,7 +10,8 @@ public sealed partial class MainForm
         foreach (var (label, action) in new (string, Func<Task>)[]
         {
             ("Validate profile", ValidateAsync), ("Open game folder", OpenGameAsync),
-            ("Remove runtime", RemoveRuntimeAsync), ("Clean game", CleanGameAsync)
+            ("Remove runtime", RemoveRuntimeAsync), ("Clean game", CleanGameAsync),
+            ("Reset to factory settings", FactoryResetAsync)
         })
             menu.Items.Add(label, null, async (_, _) => await RunAsync(action));
         button.Click += (_, _) => menu.Show(button, new Point(0, button.Height));

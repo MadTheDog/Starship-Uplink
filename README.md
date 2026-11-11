@@ -24,6 +24,12 @@ In **Modpacks**, choose **Export profile** to share the installed versions and e
 
 ## Update or clean up
 
+**Game tools → Reset to factory settings** repairs a broken mod installation, including when the entire BepInEx folder was deleted or runtime files have changed. Select the affected profile, close its game, choose the command and confirm the displayed game path. Uplink downloads and verifies a fresh BepInEx release before removing anything, then reinstalls BepInEx and bundled Keel. Internet access is required for fresh runtime discovery/download.
+
+Reset permanently removes the selected installation's entire `BepInEx` folder, including **all manual and managed mods, mod settings, logs and cleanup backups**, plus `doorstop_libs`, `winhttp.dll`, `doorstop_config.ini`, `.doorstop_version`, Uplink runtime/update records and that profile's runtime data. It clears the profile's installed-mod selection. Old-file hashes, missing files and corrupt runtime ownership records do not block it. It keeps the **base game, saves, game settings, other profiles and shared package library**. It cannot restore game files previously replaced by a mod; use Steam verification separately if needed.
+
+If reset is interrupted or Windows reports a locked/inaccessible file, close the game, resolve permissions and run the same command again. An incomplete reset blocks ordinary runtime preparation/mod deployment. After completion choose **Play modded** to check Keel startup, then reinstall desired mods from the library. Successful reset establishes installation integrity; it does not establish compatibility of every mod or game runtime.
+
 **Update Uplink** checks the stable GitHub release. If a newer version is available, confirm the in-place upgrade. Uplink verifies the downloaded ZIP, backs up the old launcher files, and restarts with your existing workspace. The updater uses the release ZIP layout and a writable launcher directory. If the bundled Keel runtime and SDK were replaced, the updater verifies both against their exact official Keel release and keeps them in the rollback backup. The incoming Uplink package must include that Keel version or a newer one.
 
 If an older Uplink refuses to update because its bundled Keel files changed, extract the new Uplink ZIP into a separate folder and start its executable with `--workspace "absolute path to your existing Uplink data folder"`. Keep that workspace in place. The older executable performs its own checks before it can install this fix.

@@ -158,17 +158,23 @@ public sealed partial class MainForm : Form
             if (refreshProfiles)
             {
                 var id = (profiles.SelectedItem as ProfileChoice)?.Id; profiles.Items.Clear();
-                foreach (var item in service.ListProfiles()) profiles.Items.Add(new ProfileChoice(item.Id, item.Name));
+                foreach (var item in service.ListProfilesForReset()) profiles.Items.Add(new ProfileChoice(item.Id, item.Name));
                 profiles.SelectedItem = profiles.Items.Cast<ProfileChoice>().FirstOrDefault(x => x.Id == id);
                 if (profiles.SelectedIndex < 0 && profiles.Items.Count > 0) profiles.SelectedIndex = 0;
             }
             ClearPicks(library);
             ClearPicks(installed);
+            if (profiles.SelectedItem is ProfileChoice selected)
+            {
+                var snapshot = service.ListProfilesForReset().Single(item => item.Id == selected.Id);
+                ShowGameBuild(snapshot.GameDirectory);
+                RefreshKeelButton(snapshot.GameDirectory);
+            }
             var packages = service.ListPackages();
             library.DataSource = packages.Select(x => new { x.Id, x.Name, x.Version, Repository = x.Repository ?? "Local ZIP" }).ToList();
             if (profiles.SelectedItem is ProfileChoice choice)
             {
-                var profile = service.GetProfile(choice.Id); target.Text = "Game: " + profile.GameDirectory;
+                var profile = service.GetProfile(choice.Id);
                 RefreshKeelButton(profile.GameDirectory);
                 var names = packages.ToDictionary(x => (x.Id, x.Version), x => x.Name);
                 installed.DataSource = profile.Mods.Select(x => new
@@ -191,6 +197,13 @@ public sealed partial class MainForm : Form
                 installed.DataSource = null;
                 target.Text = "Create a profile to choose a game installation.";
             }
+        }
+        catch (Exception ex) when (ex is PlatformException or IOException or UnauthorizedAccessException or InvalidOperationException or System.Text.Json.JsonException)
+        {
+            library.DataSource = null;
+            installed.DataSource = null;
+            status.Text = "Installation needs recovery";
+            Write(ex.Message + " Use Game tools → Reset to factory settings to reinstall the mod runtime.");
         }
         finally { refreshing = false; }
     }
